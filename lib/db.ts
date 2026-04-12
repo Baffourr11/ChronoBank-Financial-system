@@ -65,3 +65,67 @@ export async function getDatabase(): Promise<Db> {
   const { db } = await connectToDatabase();
   return db;
 }
+
+// TypeScript Interfaces for Database Documents
+export interface User {
+  _id?: string;
+  email: string;
+  username: string;
+  passwordHash: string;
+  createdAt: Date;
+  preferences: {
+    currency: string;
+    timezone: string;
+    theme: string;
+  };
+}
+
+export interface Account {
+  _id?: string;
+  userId: string;
+  name: string;
+  type: 'checking' | 'savings' | 'investment' | 'credit';
+  balance: number;
+  currency: string;
+  createdAt: Date;
+}
+
+export interface Transaction {
+  _id?: string;
+  userId: string;
+  accountId: string;
+  type: 'income' | 'expense' | 'transfer';
+  category: string;
+  amount: number;
+  description: string;
+  date: Date;
+  scheduledDate?: Date;
+  isRecurring: boolean;
+  recurrencePattern?: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  status: 'pending' | 'completed' | 'failed';
+  tags: string[];
+  createdAt: Date;
+}
+
+export interface Budget {
+  _id?: string;
+  userId: string;
+  category: string;
+  limitAmount: number;
+  period: 'monthly' | 'yearly';
+  startDate: Date;
+  alertThreshold: number;
+  createdAt: Date;
+}
+
+export interface Alert {
+  _id?: string;
+  userId: string;
+  type: 'budget_exceeded' | 'anomaly_detected' | 'goal_milestone' | 'low_balance';
+  title: string;
+  message: string;
+  severity: 'low' | 'medium' | 'high';
+  isRead: boolean;
+  data?: Record<string, any>;
+  createdAt: Date;
+}
