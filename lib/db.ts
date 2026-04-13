@@ -1,131 +1,46 @@
-import { MongoClient, Db } from 'mongodb';
+// Path: lib/db.ts
+import mongoose from "mongoose";
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/chrono-bank';
-const MONGODB_DB = process.env.MONGODB_DB || 'chrono-bank';
+const MONGODB_URI =
+  process.env.MONGODB_URI || "mongodb://localhost:27017/chrono-bank";
 
 if (!MONGODB_URI) {
-  throw new Error('MONGODB_URI environment variable is not set');
+  throw new Error("MONGODB_URI environment variable is not set");
 }
 
-let cachedClient: MongoClient | null = null;
-let cachedDb: Db | null = null;
+let cachedConnection: typeof mongoose | null = null;
 
-export async function connectToDatabase(): Promise<{ client: MongoClient; db: Db }> {
-  if (cachedClient && cachedDb) {
-    return { client: cachedClient, db: cachedDb };
+export async function connectToDatabase(): Promise<typeof mongoose> {
+  if (cachedConnection) {
+    return cachedConnection;
   }
 
-  const client = new MongoClient(MONGODB_URI);
-  await client.connect();
-
-  const db = client.db(MONGODB_DB);
-  
-  // Create indexes for performance
-  await createIndexes(db);
-  
-  cachedClient = client;
-  cachedDb = db;
-
-  return { client, db };
-}
-
-async function createIndexes(db: Db) {
   try {
-    // Users indexes
-    const usersCollection = db.collection('users');
-    await usersCollection.createIndex({ email: 1 }, { unique: true });
-    await usersCollection.createIndex({ username: 1 }, { unique: true });
+    const connection = await mongoose.connect(MONGODB_URI, {
+      // Connection options
+      maxPoolSize: 10, // Maintain up to 10 socket connections
+      serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
+      socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
+    });
 
-    // Accounts indexes
-    const accountsCollection = db.collection('accounts');
-    await accountsCollection.createIndex({ userId: 1 });
-
-    // Transactions indexes
-    const transactionsCollection = db.collection('transactions');
-    await transactionsCollection.createIndex({ userId: 1 });
-    await transactionsCollection.createIndex({ accountId: 1 });
-    await transactionsCollection.createIndex({ date: -1 });
-    await transactionsCollection.createIndex({ category: 1 });
-
-    // Budgets indexes
-    const budgetsCollection = db.collection('budgets');
-    await budgetsCollection.createIndex({ userId: 1 });
-    await budgetsCollection.createIndex({ category: 1 });
-
-    // Alerts indexes
-    const alertsCollection = db.collection('alerts');
-    await alertsCollection.createIndex({ userId: 1 });
-    await alertsCollection.createIndex({ createdAt: -1 });
+    cachedConnection = connection;
+    console.log("Connected to MongoDB via Mongoose");
+    return connection;
   } catch (error) {
-    console.error('Error creating indexes:', error);
+    console.error("Error connecting to MongoDB:", error);
+    throw error;
   }
 }
 
-export async function getDatabase(): Promise<Db> {
-  const { db } = await connectToDatabase();
-  return db;
+export async function getDatabase() {
+  await connectToDatabase();
+  return mongoose;
 }
 
-// TypeScript Interfaces for Database Documents
-export interface User {
-  _id?: string;
-  email: string;
-  username: string;
-  passwordHash: string;
-  createdAt: Date;
-  preferences: {
-    currency: string;
-    timezone: string;
-    theme: string;
-  };
-}
-
-export interface Account {
-  _id?: string;
-  userId: string;
-  name: string;
-  type: 'checking' | 'savings' | 'investment' | 'credit';
-  balance: number;
-  currency: string;
-  createdAt: Date;
-}
-
-export interface Transaction {
-  _id?: string;
-  userId: string;
-  accountId: string;
-  type: 'income' | 'expense' | 'transfer';
-  category: string;
-  amount: number;
-  description: string;
-  date: Date;
-  scheduledDate?: Date;
-  isRecurring: boolean;
-  recurrencePattern?: 'daily' | 'weekly' | 'monthly' | 'yearly';
-  status: 'pending' | 'completed' | 'failed';
-  tags: string[];
-  createdAt: Date;
-}
-
-export interface Budget {
-  _id?: string;
-  userId: string;
-  category: string;
-  limitAmount: number;
-  period: 'monthly' | 'yearly';
-  startDate: Date;
-  alertThreshold: number;
-  createdAt: Date;
-}
-
-export interface Alert {
-  _id?: string;
-  userId: string;
-  type: 'budget_exceeded' | 'anomaly_detected' | 'goal_milestone' | 'low_balance';
-  title: string;
-  message: string;
-  severity: 'low' | 'medium' | 'high';
-  isRead: boolean;
-  data?: Record<string, any>;
-  createdAt: Date;
+export async function disconnectDatabase() {
+  if (cachedConnection) {
+    await mongoose.disconnect();
+    cachedConnection = null;
+    console.log("Disconnected from MongoDB");
+  }
 }

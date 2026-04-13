@@ -1,8 +1,10 @@
-import { NextRequest } from 'next/server';
-import bcrypt from 'bcryptjs';
-import { getDatabase } from '@/lib/db';
-import { generateToken, setAuthCookie } from '@/lib/auth';
-import { apiSuccess, apiError } from '@/lib/api';
+// Path: app/api/auth/login/route.ts
+import { NextRequest } from "next/server";
+import bcrypt from "bcryptjs";
+import { connectToDatabase } from "@/lib/db";
+import { generateToken, setAuthCookie } from "@/lib/auth";
+import { apiSuccess, apiError } from "@/lib/api";
+import { User } from "@/lib/models";
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,20 +12,19 @@ export async function POST(request: NextRequest) {
     const { email, password } = body;
 
     if (!email || !password) {
-      return apiError('Email and password are required', 400);
+      return apiError("Email and password are required", 400);
     }
 
-    const db = await getDatabase();
-    const usersCollection = db.collection('users');
+    await connectToDatabase();
 
-    const user = await usersCollection.findOne({ email });
+    const user = await User.findOne({ email });
     if (!user) {
-      return apiError('Invalid email or password', 401);
+      return apiError("Invalid email or password", 401);
     }
 
     const passwordMatch = await bcrypt.compare(password, user.passwordHash);
     if (!passwordMatch) {
-      return apiError('Invalid email or password', 401);
+      return apiError("Invalid email or password", 401);
     }
 
     const userId = user._id.toString();
@@ -34,10 +35,10 @@ export async function POST(request: NextRequest) {
       userId,
       email,
       username: user.username,
-      message: 'Login successful',
+      message: "Login successful",
     });
   } catch (error) {
-    console.error('Login error:', error);
-    return apiError('Login failed', 500);
+    console.error("Login error:", error);
+    return apiError("Login failed", 500);
   }
 }
