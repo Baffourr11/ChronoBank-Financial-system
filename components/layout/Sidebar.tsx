@@ -5,12 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  Wallet,
-  TrendingUp,
-  Calendar,
-  DollarSign,
-  Bell,
-  Lightbulb,
   Settings,
   Brain,
   Target,
@@ -20,16 +14,10 @@ import {
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/accounts", label: "Accounts", icon: Wallet },
-  { href: "/transactions", label: "Transactions", icon: TrendingUp },
   { href: "/rules", label: "Rules", icon: Target },
   { href: "/analytics/overview", label: "Analytics", icon: Brain },
   { href: "/analytics/scenarios", label: "Scenarios", icon: Shield },
-  { href: "/data/import", label: "Data", icon: Database },
-  { href: "/timeline", label: "Timeline", icon: Calendar },
-  { href: "/budget", label: "Budget", icon: DollarSign },
-  { href: "/alerts", label: "Alerts", icon: Bell },
-  { href: "/insights", label: "Insights", icon: Lightbulb },
+  { href: "/data/import", label: "Data Import", icon: Database },
 ];
 
 export default function Sidebar() {
@@ -41,7 +29,7 @@ export default function Sidebar() {
       <div className="p-6 border-b border-sidebar-border">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-sidebar-primary flex items-center justify-center">
-            <TrendingUp className="w-6 h-6 text-sidebar-primary-foreground" />
+            <Brain className="w-6 h-6 text-sidebar-primary-foreground" />
           </div>
           <div>
             <h1 className="text-lg font-bold text-sidebar-foreground">

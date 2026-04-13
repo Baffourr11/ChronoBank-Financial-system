@@ -1,13 +1,11 @@
-import CalendarGrid from '@/components/timeline/CalendarGrid';
+// Path: app/(dashboard)/timeline/page.tsx
+"use client";
 
 export default function TimelinePage() {
   return (
-    <div className="p-8 space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold">Timeline</h1>
-        <p className="text-muted-foreground mt-2">Calendar view of all your transactions</p>
-      </div>
-      <CalendarGrid />
+    <div className="space-y-6">
+      <h1 className="text-3xl font-bold">Timeline</h1>
+      <p>This feature is not part of the core system.</p>
     </div>
   );
 }
