@@ -1,7 +1,7 @@
 // Path: lib/rules/RuleEngine.ts
 import { Rule, IRule, RuleCondition, RuleAction } from "../models/Rule";
 import { RuleExecution } from "../models/RuleExecution";
-import { Transaction, Account, Budget } from "../models";
+// Note: Transaction, Account, Budget models removed - only core Rule functionality remains
 import { ConditionEvaluator, EvaluationContext } from "./ConditionEvaluator";
 import { ActionExecutor } from "./ActionExecutor";
 import { connectToDatabase } from "../db";
@@ -128,16 +128,12 @@ export class RuleEngine {
     userId: string,
     triggerData?: any,
   ): Promise<EvaluationContext> {
-    const [transactions, accounts, budgets] = await Promise.all([
-      Transaction.find({ userId }).sort({ date: -1 }).limit(1000),
-      Account.find({ userId }),
-      Budget.find({ userId }),
-    ]);
-
+    // Since we removed non-core models, provide minimal context
+    // Rules can still work with trigger data and basic date/time context
     return {
-      transactions,
-      accounts,
-      budgets,
+      transactions: [], // Empty since Transaction model removed
+      accounts: [], // Empty since Account model removed
+      budgets: [], // Empty since Budget model removed
       currentDate: new Date(),
       triggerData,
     };

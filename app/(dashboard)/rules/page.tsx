@@ -1,28 +1,28 @@
+// Path: app/(dashboard)/rules/page.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { 
-  Plus, 
-  Play, 
-  Edit, 
-  Trash2, 
-  Clock, 
-  AlertTriangle, 
-  CheckCircle, 
-  XCircle,
+import {
+  AlertTriangle,
+  Calendar,
+  CheckCircle,
+  Edit,
+  Play,
+  Plus,
   Settings,
   Target,
-  Calendar
+  Trash2,
+  XCircle
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 interface Rule {
   id: string;

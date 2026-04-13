@@ -1,13 +1,11 @@
 // Path: lib/rules/ConditionEvaluator.ts
 import { RuleCondition } from "../models/Rule";
-import { ITransaction } from "../models/Transaction";
-import { IAccount } from "../models/Account";
-import { IBudget } from "../models/Budget";
+// Note: ITransaction, IAccount, IBudget models removed - only core Rule functionality remains
 
 export interface EvaluationContext {
-  transactions: ITransaction[];
-  accounts: IAccount[];
-  budgets: IBudget[];
+  transactions: any[]; // Empty array since Transaction model removed
+  accounts: any[]; // Empty array since Account model removed
+  budgets: any[]; // Empty array since Budget model removed
   currentDate: Date;
   triggerData?: any;
 }
@@ -77,29 +75,27 @@ export class ConditionEvaluator {
     condition: RuleCondition,
     context: EvaluationContext,
   ): boolean {
-    const relevantTransactions = context.transactions.filter(
-      (t) => t[condition.field as keyof ITransaction] !== undefined,
-    );
+    // Since transactions array is empty (model removed), evaluate based on trigger data if available
+    if (context.triggerData && context.triggerData.type === "transaction") {
+      const transaction = context.triggerData;
 
-    if (condition.field === "amount") {
-      const amounts = relevantTransactions.map((t) => t.amount);
-      return this.evaluateArrayCondition(
-        amounts,
-        condition.operator,
-        condition.value,
-        condition.secondaryValue,
-      );
-    }
+      if (condition.field === "amount") {
+        return this.evaluateArrayCondition(
+          [transaction.amount],
+          condition.operator,
+          condition.value,
+          condition.secondaryValue,
+        );
+      }
 
-    if (condition.field === "category" || condition.field === "description") {
-      const values = relevantTransactions.map(
-        (t) => t[condition.field as keyof ITransaction],
-      ) as string[];
-      return this.evaluateStringCondition(
-        values,
-        condition.operator,
-        condition.value,
-      );
+      if (condition.field === "category" || condition.field === "description") {
+        const value = transaction[condition.field];
+        return this.evaluateStringCondition(
+          [value],
+          condition.operator,
+          condition.value,
+        );
+      }
     }
 
     return false;
@@ -109,25 +105,42 @@ export class ConditionEvaluator {
     condition: RuleCondition,
     context: EvaluationContext,
   ): boolean {
-    const categories = context.transactions.map((t) => t.category);
-    return this.evaluateStringCondition(
-      categories,
-      condition.operator,
-      condition.value,
-    );
+    // Since transactions array is empty (model removed), evaluate based on trigger data if available
+    if (
+      context.triggerData &&
+      context.triggerData.type === "transaction" &&
+      context.triggerData.category
+    ) {
+      const category = context.triggerData.category;
+      return this.evaluateStringCondition(
+        [category],
+        condition.operator,
+        condition.value,
+      );
+    }
+
+    return false;
   }
 
   private static evaluateAmountCondition(
     condition: RuleCondition,
     context: EvaluationContext,
   ): boolean {
-    const amounts = context.transactions.map((t) => t.amount);
-    return this.evaluateArrayCondition(
-      amounts,
-      condition.operator,
-      condition.value,
-      condition.secondaryValue,
-    );
+    // Since transactions array is empty (model removed), evaluate based on trigger data if available
+    if (
+      context.triggerData &&
+      context.triggerData.type === "transaction" &&
+      context.triggerData.amount
+    ) {
+      const amount = context.triggerData.amount;
+      return this.evaluateArrayCondition(
+        [amount],
+        condition.operator,
+        condition.value,
+      );
+    }
+
+    return false;
   }
 
   private static evaluateDateCondition(
