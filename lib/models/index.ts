@@ -9,3 +9,7 @@ export { Budget } from "./Budget";
 export type { IBudget } from "./Budget";
 export { Alert } from "./Alert";
 export type { IAlert } from "./Alert";
+export { Rule } from "./Rule";
+export type { IRule, RuleCondition, RuleAction, RuleSchedule } from "./Rule";
+export { RuleExecution } from "./RuleExecution";
+export type { IRuleExecution, RuleExecutionAction } from "./RuleExecution";
