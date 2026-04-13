@@ -195,4 +195,5 @@ RuleSchema.index({ isActive: 1 });
 RuleSchema.index({ "schedule.type": 1 });
 RuleSchema.index({ priority: 1 });
 
-export const Rule = mongoose.model<IRule>("Rule", RuleSchema);
+export const Rule =
+  mongoose.models.Rule || mongoose.model<IRule>("Rule", RuleSchema);
