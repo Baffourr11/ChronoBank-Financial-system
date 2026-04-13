@@ -119,7 +119,12 @@ export default function BalanceTrend({ userId }: BalanceTrendProps) {
   };
 
   const getTrendIcon = () => {
-    if (!forecast) return <Brain className="w-4 h-4 text-chart-2" />;
+    if (
+      !forecast ||
+      !forecast.cashFlowForecast ||
+      forecast.cashFlowForecast.length === 0
+    )
+      return <Brain className="w-4 h-4 text-chart-2" />;
 
     const finalBalance =
       forecast.cashFlowForecast[forecast.cashFlowForecast.length - 1]
@@ -136,7 +141,12 @@ export default function BalanceTrend({ userId }: BalanceTrendProps) {
   };
 
   const getTrendText = () => {
-    if (!forecast) return "AI-powered analysis";
+    if (
+      !forecast ||
+      !forecast.cashFlowForecast ||
+      forecast.cashFlowForecast.length === 0
+    )
+      return "AI-powered analysis";
 
     const finalBalance =
       forecast.cashFlowForecast[forecast.cashFlowForecast.length - 1]
@@ -251,23 +261,24 @@ export default function BalanceTrend({ userId }: BalanceTrendProps) {
               <span className="text-muted-foreground">Projected (90d):</span>
               <div className="font-medium">
                 GHS{" "}
-                {forecast.cashFlowForecast[
+                {forecast?.cashFlowForecast?.[
                   forecast.cashFlowForecast.length - 1
-                ]?.balance.toFixed(0) || "0"}
+                ]?.balance?.toFixed(0) || "0"}
               </div>
             </div>
             <div>
               <span className="text-muted-foreground">Avg Confidence:</span>
               <div className="font-medium">
-                {(
-                  (forecast.cashFlowForecast.reduce(
-                    (sum: number, item: any) => sum + item.confidence,
-                    0,
-                  ) /
-                    forecast.cashFlowForecast.length) *
-                  100
-                ).toFixed(0)}
-                %
+                {forecast?.cashFlowForecast?.length
+                  ? (
+                      (forecast.cashFlowForecast.reduce(
+                        (sum: number, item: any) => sum + item.confidence,
+                        0,
+                      ) /
+                        forecast.cashFlowForecast.length) *
+                      100
+                    ).toFixed(0) + "%"
+                  : "0%"}
               </div>
             </div>
             <div>
