@@ -37,9 +37,20 @@ interface Scenario {
   id: string;
   name: string;
   description: string;
-  type: "market_shock" | "income_change" | "expense_change";
+  type:
+    | "market_shock"
+    | "income_change"
+    | "expense_change"
+    | "investment"
+    | "custom";
   parameters: any;
   duration: number;
+  createdAt: Date;
+}
+
+interface AmountFrequency {
+  amount: number;
+  frequency?: string;
 }
 
 interface SimulationResult {
@@ -47,7 +58,7 @@ interface SimulationResult {
   baseline: any;
   stressed: any;
   impact: any;
-  riskLevel: string;
+  riskLevel: "low" | "medium" | "high" | "critical";
   recommendations: any[];
 }
 
@@ -230,7 +241,13 @@ export default function ScenariosPage() {
                           {key.replace(/([A-Z])/g, " $1").trim()}:
                         </span>
                         <span className="font-medium">
-                          {typeof value === "number" ? `${value}%` : value}
+                          {typeof value === "number"
+                            ? `${value}%`
+                            : typeof value === "object" &&
+                                value !== null &&
+                                (value as AmountFrequency).amount
+                              ? `GHS ${(value as AmountFrequency).amount}${(value as AmountFrequency).frequency ? ` ${(value as AmountFrequency).frequency}` : ""}`
+                              : String(value)}
                         </span>
                       </div>
                     ))}
@@ -324,7 +341,7 @@ export default function ScenariosPage() {
                           <Slider
                             value={[customParameters[key] || defaultValue]}
                             onValueChange={(value) => {
-                              setCustomParameters((prev) => ({
+                              setCustomParameters((prev: any) => ({
                                 ...prev,
                                 [key]: value[0],
                               }));

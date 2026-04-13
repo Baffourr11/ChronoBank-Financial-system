@@ -1,11 +1,36 @@
-'use client';
+// Path: components/analytics/ScenarioResults.tsx
+"use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { SimulationResult, Scenario } from '@/lib/simulator/ScenarioEngine';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { AlertTriangle, TrendingDown, TrendingUp, Shield, Lightbulb, Play } from 'lucide-react';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { SimulationResult, Scenario } from "@/lib/simulator/ScenarioEngine";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+} from "recharts";
+import {
+  AlertTriangle,
+  TrendingDown,
+  TrendingUp,
+  Shield,
+  Lightbulb,
+  Play,
+} from "lucide-react";
 
 interface ScenarioResultsProps {
   result: SimulationResult;
@@ -13,13 +38,19 @@ interface ScenarioResultsProps {
   isLoading?: boolean;
 }
 
-export default function ScenarioResults({ result, onRunNewScenario, isLoading }: ScenarioResultsProps) {
+export default function ScenarioResults({
+  result,
+  onRunNewScenario,
+  isLoading,
+}: ScenarioResultsProps) {
   if (isLoading) {
     return (
       <Card>
         <CardHeader>
           <CardTitle>Scenario Simulation</CardTitle>
-          <CardDescription>Running stress test on your financial resilience</CardDescription>
+          <CardDescription>
+            Running stress test on your financial resilience
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-80 bg-muted rounded animate-pulse" />
@@ -29,44 +60,56 @@ export default function ScenarioResults({ result, onRunNewScenario, isLoading }:
   }
 
   // Prepare comparison data for charts
-  const comparisonData = result.baseline.dailyProjections.map((baseline, index) => {
-    const stressed = result.stressed.dailyProjections[index];
-    return {
-      date: baseline.date,
-      baselineBalance: baseline.balance,
-      stressedBalance: stressed.balance,
-      baselineCashFlow: baseline.netCashFlow,
-      stressedCashFlow: stressed.netCashFlow,
-    };
-  });
+  const comparisonData = result.baseline.dailyProjections.map(
+    (baseline, index) => {
+      const stressed = result.stressed.dailyProjections[index];
+      return {
+        date: baseline.date,
+        baselineBalance: baseline.balance,
+        stressedBalance: stressed.balance,
+        baselineCashFlow: baseline.netCashFlow,
+        stressedCashFlow: stressed.netCashFlow,
+      };
+    },
+  );
 
   // Get risk level color
   const getRiskLevelColor = (level: string) => {
     switch (level) {
-      case 'critical': return 'bg-red-500 text-white';
-      case 'high': return 'bg-orange-500 text-white';
-      case 'medium': return 'bg-yellow-500 text-black';
-      case 'low': return 'bg-green-500 text-white';
-      default: return 'bg-gray-500 text-white';
+      case "critical":
+        return "bg-red-500 text-white";
+      case "high":
+        return "bg-orange-500 text-white";
+      case "medium":
+        return "bg-yellow-500 text-black";
+      case "low":
+        return "bg-green-500 text-white";
+      default:
+        return "bg-gray-500 text-white";
     }
   };
 
   // Get risk level icon
   const getRiskLevelIcon = (level: string) => {
     switch (level) {
-      case 'critical': return <AlertTriangle className="w-4 h-4" />;
-      case 'high': return <TrendingDown className="w-4 h-4" />;
-      case 'medium': return <AlertTriangle className="w-4 h-4" />;
-      case 'low': return <Shield className="w-4 h-4" />;
-      default: return <Shield className="w-4 h-4" />;
+      case "critical":
+        return <AlertTriangle className="w-4 h-4" />;
+      case "high":
+        return <TrendingDown className="w-4 h-4" />;
+      case "medium":
+        return <AlertTriangle className="w-4 h-4" />;
+      case "low":
+        return <Shield className="w-4 h-4" />;
+      default:
+        return <Shield className="w-4 h-4" />;
     }
   };
 
   // Format currency
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-GH', {
-      style: 'currency',
-      currency: 'GHS',
+    return new Intl.NumberFormat("en-GH", {
+      style: "currency",
+      currency: "GHS",
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(amount);
@@ -88,7 +131,9 @@ export default function ScenarioResults({ result, onRunNewScenario, isLoading }:
             <div className="flex items-center gap-2">
               <Badge className={getRiskLevelColor(result.riskLevel)}>
                 {getRiskLevelIcon(result.riskLevel)}
-                <span className="ml-1">{result.riskLevel.toUpperCase()} RISK</span>
+                <span className="ml-1">
+                  {result.riskLevel.toUpperCase()} RISK
+                </span>
               </Badge>
               {onRunNewScenario && (
                 <Button variant="outline" size="sm" onClick={onRunNewScenario}>
@@ -101,39 +146,58 @@ export default function ScenarioResults({ result, onRunNewScenario, isLoading }:
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="text-center p-4 border rounded-lg">
-              <p className="text-sm text-muted-foreground">Final Balance Impact</p>
-              <p className={`text-lg font-semibold ${
-                result.impact.balanceImpact < 0 ? 'text-red-600' : 'text-green-600'
-              }`}>
-                {result.impact.balanceImpact < 0 ? '-' : '+'}
+              <p className="text-sm text-muted-foreground">
+                Final Balance Impact
+              </p>
+              <p
+                className={`text-lg font-semibold ${
+                  result.impact.balanceImpact < 0
+                    ? "text-red-600"
+                    : "text-green-600"
+                }`}
+              >
+                {result.impact.balanceImpact < 0 ? "-" : "+"}
                 {formatCurrency(Math.abs(result.impact.balanceImpact))}
               </p>
             </div>
-            
+
             <div className="text-center p-4 border rounded-lg">
               <p className="text-sm text-muted-foreground">Lowest Balance</p>
-              <p className={`text-lg font-semibold ${
-                result.stressed.lowestBalance < 0 ? 'text-red-600' : 'text-green-600'
-              }`}>
+              <p
+                className={`text-lg font-semibold ${
+                  result.stressed.lowestBalance < 0
+                    ? "text-red-600"
+                    : "text-green-600"
+                }`}
+              >
                 {formatCurrency(result.stressed.lowestBalance)}
               </p>
             </div>
-            
+
             <div className="text-center p-4 border rounded-lg">
               <p className="text-sm text-muted-foreground">Negative Days</p>
-              <p className={`text-lg font-semibold ${
-                result.stressed.negativeDays > 0 ? 'text-red-600' : 'text-green-600'
-              }`}>
+              <p
+                className={`text-lg font-semibold ${
+                  result.stressed.negativeDays > 0
+                    ? "text-red-600"
+                    : "text-green-600"
+                }`}
+              >
                 {result.stressed.negativeDays}
               </p>
             </div>
-            
+
             <div className="text-center p-4 border rounded-lg">
               <p className="text-sm text-muted-foreground">Liquidity Risk</p>
-              <p className={`text-lg font-semibold ${
-                result.impact.liquidityRisk > 0.5 ? 'text-red-600' : 
-                result.impact.liquidityRisk > 0.3 ? 'text-yellow-600' : 'text-green-600'
-              }`}>
+              <p
+                className={`text-lg font-semibold ${
+                  result.impact.liquidityRisk > 0.5
+                    ? "text-red-600"
+                    : result.impact.liquidityRisk > 0.3
+                      ? "text-yellow-600"
+                      : "text-green-600"
+                }`}
+              >
                 {(result.impact.liquidityRisk * 100).toFixed(0)}%
               </p>
             </div>
@@ -152,26 +216,31 @@ export default function ScenarioResults({ result, onRunNewScenario, isLoading }:
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={comparisonData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--color-border))" />
-              <XAxis 
-                dataKey="date" 
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="hsl(var(--color-border))"
+              />
+              <XAxis
+                dataKey="date"
                 stroke="hsl(var(--color-muted-foreground))"
                 tick={{ fontSize: 12 }}
               />
-              <YAxis 
+              <YAxis
                 stroke="hsl(var(--color-muted-foreground))"
                 tick={{ fontSize: 12 }}
                 tickFormatter={(value) => `GHS ${value}`}
               />
-              <Tooltip 
+              <Tooltip
                 contentStyle={{
-                  backgroundColor: 'hsl(var(--color-card))',
-                  border: '1px solid hsl(var(--color-border))',
-                  borderRadius: '8px',
+                  backgroundColor: "hsl(var(--color-card))",
+                  border: "1px solid hsl(var(--color-border))",
+                  borderRadius: "8px",
                 }}
                 formatter={(value: any, name: string) => {
-                  if (name === 'baselineBalance') return [formatCurrency(value), 'Baseline'];
-                  if (name === 'stressedBalance') return [formatCurrency(value), 'With Scenario'];
+                  if (name === "baselineBalance")
+                    return [formatCurrency(value), "Baseline"];
+                  if (name === "stressedBalance")
+                    return [formatCurrency(value), "With Scenario"];
                   return [value, name];
                 }}
               />
@@ -208,26 +277,31 @@ export default function ScenarioResults({ result, onRunNewScenario, isLoading }:
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
             <AreaChart data={comparisonData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--color-border))" />
-              <XAxis 
-                dataKey="date" 
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="hsl(var(--color-border))"
+              />
+              <XAxis
+                dataKey="date"
                 stroke="hsl(var(--color-muted-foreground))"
                 tick={{ fontSize: 12 }}
               />
-              <YAxis 
+              <YAxis
                 stroke="hsl(var(--color-muted-foreground))"
                 tick={{ fontSize: 12 }}
                 tickFormatter={(value) => `GHS ${value}`}
               />
-              <Tooltip 
+              <Tooltip
                 contentStyle={{
-                  backgroundColor: 'hsl(var(--color-card))',
-                  border: '1px solid hsl(var(--color-border))',
-                  borderRadius: '8px',
+                  backgroundColor: "hsl(var(--color-card))",
+                  border: "1px solid hsl(var(--color-border))",
+                  borderRadius: "8px",
                 }}
                 formatter={(value: any, name: string) => {
-                  if (name === 'baselineCashFlow') return [formatCurrency(value), 'Baseline'];
-                  if (name === 'stressedCashFlow') return [formatCurrency(value), 'With Scenario'];
+                  if (name === "baselineCashFlow")
+                    return [formatCurrency(value), "Baseline"];
+                  if (name === "stressedCashFlow")
+                    return [formatCurrency(value), "With Scenario"];
                   return [value, name];
                 }}
               />
@@ -267,29 +341,47 @@ export default function ScenarioResults({ result, onRunNewScenario, isLoading }:
               <h4 className="font-medium">Financial Impact</h4>
               <div className="space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Balance Change</span>
-                  <span className={`font-medium ${
-                    result.impact.balanceImpact < 0 ? 'text-red-600' : 'text-green-600'
-                  }`}>
-                    {result.impact.balanceImpact < 0 ? '-' : '+'}
+                  <span className="text-sm text-muted-foreground">
+                    Balance Change
+                  </span>
+                  <span
+                    className={`font-medium ${
+                      result.impact.balanceImpact < 0
+                        ? "text-red-600"
+                        : "text-green-600"
+                    }`}
+                  >
+                    {result.impact.balanceImpact < 0 ? "-" : "+"}
                     {formatCurrency(Math.abs(result.impact.balanceImpact))}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Income Change</span>
-                  <span className={`font-medium ${
-                    result.impact.incomeImpact < 0 ? 'text-red-600' : 'text-green-600'
-                  }`}>
-                    {result.impact.incomeImpact < 0 ? '-' : '+'}
+                  <span className="text-sm text-muted-foreground">
+                    Income Change
+                  </span>
+                  <span
+                    className={`font-medium ${
+                      result.impact.incomeImpact < 0
+                        ? "text-red-600"
+                        : "text-green-600"
+                    }`}
+                  >
+                    {result.impact.incomeImpact < 0 ? "-" : "+"}
                     {formatCurrency(Math.abs(result.impact.incomeImpact))}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Expense Change</span>
-                  <span className={`font-medium ${
-                    result.impact.expenseImpact < 0 ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    {result.impact.expenseImpact < 0 ? '-' : '+'}
+                  <span className="text-sm text-muted-foreground">
+                    Expense Change
+                  </span>
+                  <span
+                    className={`font-medium ${
+                      result.impact.expenseImpact < 0
+                        ? "text-green-600"
+                        : "text-red-600"
+                    }`}
+                  >
+                    {result.impact.expenseImpact < 0 ? "-" : "+"}
                     {formatCurrency(Math.abs(result.impact.expenseImpact))}
                   </span>
                 </div>
@@ -300,25 +392,41 @@ export default function ScenarioResults({ result, onRunNewScenario, isLoading }:
               <h4 className="font-medium">Risk Metrics</h4>
               <div className="space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Liquidity Risk</span>
-                  <span className={`font-medium ${
-                    result.impact.liquidityRisk > 0.5 ? 'text-red-600' : 
-                    result.impact.liquidityRisk > 0.3 ? 'text-yellow-600' : 'text-green-600'
-                  }`}>
+                  <span className="text-sm text-muted-foreground">
+                    Liquidity Risk
+                  </span>
+                  <span
+                    className={`font-medium ${
+                      result.impact.liquidityRisk > 0.5
+                        ? "text-red-600"
+                        : result.impact.liquidityRisk > 0.3
+                          ? "text-yellow-600"
+                          : "text-green-600"
+                    }`}
+                  >
                     {(result.impact.liquidityRisk * 100).toFixed(0)}%
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Solvency Risk</span>
-                  <span className={`font-medium ${
-                    result.impact.solvencyRisk > 0.3 ? 'text-red-600' : 
-                    result.impact.solvencyRisk > 0.1 ? 'text-yellow-600' : 'text-green-600'
-                  }`}>
+                  <span className="text-sm text-muted-foreground">
+                    Solvency Risk
+                  </span>
+                  <span
+                    className={`font-medium ${
+                      result.impact.solvencyRisk > 0.3
+                        ? "text-red-600"
+                        : result.impact.solvencyRisk > 0.1
+                          ? "text-yellow-600"
+                          : "text-green-600"
+                    }`}
+                  >
                     {(result.impact.solvencyRisk * 100).toFixed(0)}%
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Cash Flow Volatility</span>
+                  <span className="text-sm text-muted-foreground">
+                    Cash Flow Volatility
+                  </span>
                   <span className="font-medium">
                     {formatCurrency(result.impact.cashFlowVolatility)}
                   </span>
@@ -347,16 +455,24 @@ export default function ScenarioResults({ result, onRunNewScenario, isLoading }:
                 <div key={index} className="border rounded-lg p-4">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex-1">
-                      <h4 className="font-medium">{recommendation.description}</h4>
+                      <h4 className="font-medium">
+                        {recommendation.description}
+                      </h4>
                       <p className="text-sm text-muted-foreground mt-1">
-                        Potential impact: {formatCurrency(recommendation.potentialImpact)}
+                        Potential impact:{" "}
+                        {formatCurrency(recommendation.potentialImpact)}
                       </p>
                     </div>
                     <div className="flex gap-2">
-                      <Badge variant={
-                        recommendation.priority === 'high' ? 'destructive' :
-                        recommendation.priority === 'medium' ? 'default' : 'secondary'
-                      }>
+                      <Badge
+                        variant={
+                          recommendation.priority === "high"
+                            ? "destructive"
+                            : recommendation.priority === "medium"
+                              ? "default"
+                              : "secondary"
+                        }
+                      >
                         {recommendation.priority}
                       </Badge>
                       <Badge variant="outline">
@@ -383,22 +499,30 @@ export default function ScenarioResults({ result, onRunNewScenario, isLoading }:
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {Object.entries(result.scenario.parameters).map(([key, value]) => {
               if (value === undefined || value === null) return null;
-              
-              let displayValue = '';
-              let label = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-              
-              if (typeof value === 'number') {
-                if (key.includes('Change') || key.includes('Rate')) {
-                  displayValue = `${value > 0 ? '+' : ''}${value}%`;
+
+              let displayValue = "";
+              let label = key
+                .replace(/([A-Z])/g, " $1")
+                .replace(/^./, (str) => str.toUpperCase());
+
+              if (typeof value === "number") {
+                if (key.includes("Change") || key.includes("Rate")) {
+                  displayValue = `${value > 0 ? "+" : ""}${value}%`;
                 } else {
                   displayValue = formatCurrency(value);
                 }
-              } else if (typeof value === 'object') {
-                displayValue = `${formatCurrency(value.amount)} ${value.frequency}`;
+              } else if (typeof value === "object" && value !== null) {
+                const amount = value.amount
+                  ? formatCurrency(value.amount)
+                  : "N/A";
+                const frequency = value.frequency
+                  ? String(value.frequency)
+                  : "";
+                displayValue = frequency ? `${amount} ${frequency}` : amount;
               } else {
                 displayValue = String(value);
               }
-              
+
               return (
                 <div key={key} className="flex justify-between">
                   <span className="text-sm text-muted-foreground">{label}</span>
