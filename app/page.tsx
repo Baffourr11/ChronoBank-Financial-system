@@ -1,3 +1,4 @@
+// Path: app/page.tsx
 'use client';
 
 import Link from 'next/link';
@@ -7,7 +8,7 @@ import { ArrowRight, TrendingUp, Calendar, AlertCircle, Zap, BarChart3, Lightbul
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
+    <div className="min-h-screen bg-linear-to-b from-slate-950 via-slate-900 to-slate-950">
       {/* Navigation */}
       <nav className="border-b border-slate-800 bg-slate-950/80 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
