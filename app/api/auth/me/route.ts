@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     return apiSuccess({
       userId: userData._id.toString(),
       email: userData.email,
-      username: userData.username,
+      fullName: userData.fullName,
       preferences: userData.preferences,
     });
   } catch (error) {

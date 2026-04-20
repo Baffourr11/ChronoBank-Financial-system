@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     return apiSuccess({
       userId,
       email,
-      username: user.username,
+      fullName: user.fullName,
       message: "Login successful",
     });
   } catch (error) {

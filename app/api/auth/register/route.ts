@@ -9,10 +9,10 @@ import { User } from "@/lib/models";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { email, username, password, confirmPassword } = body;
+    const { email, fullName, password, confirmPassword } = body;
 
     // Validation
-    if (!email || !username || !password) {
+    if (!email || !fullName || !password) {
       return apiError("Missing required fields", 400);
     }
 
@@ -31,13 +31,11 @@ export async function POST(request: NextRequest) {
 
     await connectToDatabase();
 
-    // Check if email or username already exists
-    const existingUser = await User.findOne({
-      $or: [{ email }, { username }],
-    });
+    // Check if email already exists
+    const existingUser = await User.findOne({ email });
 
     if (existingUser) {
-      return apiError("Email or username already exists", 409);
+      return apiError("Email already exists", 409);
     }
 
     // Hash password
@@ -46,7 +44,7 @@ export async function POST(request: NextRequest) {
     // Create user
     const newUser = await User.create({
       email,
-      username,
+      fullName,
       passwordHash: hashedPassword,
       preferences: {
         currency: "USD",
@@ -65,7 +63,7 @@ export async function POST(request: NextRequest) {
       {
         userId,
         email,
-        username,
+        fullName,
         message: "Registration successful",
       },
       201,

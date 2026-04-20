@@ -1,17 +1,18 @@
-'use client';
+// Path: components/layout/TopBar.tsx
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
-import { Button } from '@/components/ui/button';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Bell, LogOut, User } from 'lucide-react';
+} from "@/components/ui/dropdown-menu";
+import { Bell, LogOut, User } from "lucide-react";
 
 export default function TopBar() {
   const { user, logout } = useAuth();
@@ -22,7 +23,7 @@ export default function TopBar() {
     setIsLoading(true);
     try {
       await logout();
-      router.push('/login');
+      router.push("/login");
     } finally {
       setIsLoading(false);
     }
@@ -31,7 +32,7 @@ export default function TopBar() {
   return (
     <header className="h-16 bg-background border-b border-border flex items-center justify-between px-6">
       <div className="flex-1" />
-      
+
       <div className="flex items-center gap-4">
         {/* Notifications */}
         <Button variant="ghost" size="icon" className="relative">
@@ -44,10 +45,10 @@ export default function TopBar() {
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="gap-2">
               <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-semibold">
-                {user?.username?.[0]?.toUpperCase() || 'U'}
+                {user?.fullName?.[0]?.toUpperCase() || "U"}
               </div>
               <div className="hidden sm:flex flex-col items-start">
-                <p className="text-sm font-medium">{user?.username}</p>
+                <p className="text-sm font-medium">{user?.fullName}</p>
                 <p className="text-xs text-muted-foreground">{user?.email}</p>
               </div>
             </Button>
@@ -58,9 +59,13 @@ export default function TopBar() {
               <span>Profile</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout} disabled={isLoading} className="text-destructive">
+            <DropdownMenuItem
+              onClick={handleLogout}
+              disabled={isLoading}
+              className="text-destructive"
+            >
               <LogOut className="w-4 h-4 mr-2" />
-              <span>{isLoading ? 'Signing out...' : 'Sign Out'}</span>
+              <span>{isLoading ? "Signing out..." : "Sign Out"}</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

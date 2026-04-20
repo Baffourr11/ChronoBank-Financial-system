@@ -97,7 +97,7 @@ export default function DashboardPage() {
           {/* Header */}
           <div>
             <h1 className="text-3xl font-bold text-foreground">
-              Welcome back, {user?.username}
+              Welcome back, {user?.fullName}
             </h1>
             <p className="text-muted-foreground mt-2">
               Analyzing: {selectedDataset.name}

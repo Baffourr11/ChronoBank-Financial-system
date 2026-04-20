@@ -3,7 +3,7 @@ import mongoose, { Schema, Document } from "mongoose";
 
 export interface IUser extends Document {
   email: string;
-  username: string;
+  fullName: string;
   passwordHash: string;
   createdAt: Date;
   preferences: {
@@ -23,13 +23,12 @@ const UserSchema: Schema = new Schema(
       trim: true,
       match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Invalid email format"],
     },
-    username: {
+    fullName: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
-      minlength: 3,
-      maxlength: 30,
+      minlength: 2,
+      maxlength: 50,
     },
     passwordHash: {
       type: String,
@@ -66,7 +65,6 @@ const UserSchema: Schema = new Schema(
 
 // Indexes
 UserSchema.index({ email: 1 }, { unique: true });
-UserSchema.index({ username: 1 }, { unique: true });
 
 export const User =
   mongoose.models.User || mongoose.model<IUser>("User", UserSchema);
