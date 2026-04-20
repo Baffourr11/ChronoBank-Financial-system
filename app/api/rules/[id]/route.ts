@@ -1,3 +1,4 @@
+// Path: app/api/rules/[id]/route.ts
 import { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
@@ -7,7 +8,7 @@ import { RuleEngine } from "@/lib/rules/RuleEngine";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const user = await getCurrentUser();
@@ -17,19 +18,22 @@ export async function GET(
 
     await connectToDatabase();
 
-    const rule = await Rule.findOne({ 
-      _id: params.id, 
-      userId: user.userId 
+    const { id: ruleId } = await params;
+    const rule = await Rule.findOne({
+      _id: ruleId,
+      userId: user.userId,
     });
 
     if (!rule) {
       return apiError("Rule not found", 404);
     }
 
-    const executions = await RuleExecution.find({ 
-      ruleId: params.id,
-      userId: user.userId 
-    }).sort({ createdAt: -1 }).limit(50);
+    const executions = await RuleExecution.find({
+      ruleId: ruleId,
+      userId: user.userId,
+    })
+      .sort({ createdAt: -1 })
+      .limit(50);
 
     return apiSuccess({
       id: rule._id.toString(),
@@ -42,7 +46,7 @@ export async function GET(
       schedule: rule.schedule,
       executionCount: rule.executionCount,
       lastExecuted: rule.lastExecuted,
-      executions: executions.map(exec => ({
+      executions: executions.map((exec) => ({
         id: exec._id.toString(),
         triggeredBy: exec.triggeredBy,
         conditionsMet: exec.conditionsMet,
@@ -63,7 +67,7 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const user = await getCurrentUser();
@@ -72,13 +76,22 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { name, description, conditions, actions, schedule, priority, isActive } = body;
+    const {
+      name,
+      description,
+      conditions,
+      actions,
+      schedule,
+      priority,
+      isActive,
+    } = body;
 
     await connectToDatabase();
 
-    const rule = await Rule.findOne({ 
-      _id: params.id, 
-      userId: user.userId 
+    const { id: ruleId } = await params;
+    const rule = await Rule.findOne({
+      _id: ruleId,
+      userId: user.userId,
     });
 
     if (!rule) {
@@ -117,7 +130,7 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const user = await getCurrentUser();
@@ -127,9 +140,10 @@ export async function DELETE(
 
     await connectToDatabase();
 
-    const rule = await Rule.findOne({ 
-      _id: params.id, 
-      userId: user.userId 
+    const { id: ruleId } = await params;
+    const rule = await Rule.findOne({
+      _id: ruleId,
+      userId: user.userId,
     });
 
     if (!rule) {
@@ -137,8 +151,8 @@ export async function DELETE(
     }
 
     // Delete rule and its executions
-    await RuleExecution.deleteMany({ ruleId: params.id });
-    await Rule.findByIdAndDelete(params.id);
+    await RuleExecution.deleteMany({ ruleId: ruleId });
+    await Rule.findByIdAndDelete(ruleId);
 
     return apiSuccess({ message: "Rule deleted successfully" });
   } catch (error) {
@@ -149,7 +163,7 @@ export async function DELETE(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const user = await getCurrentUser();
@@ -159,9 +173,10 @@ export async function POST(
 
     await connectToDatabase();
 
-    const rule = await Rule.findOne({ 
-      _id: params.id, 
-      userId: user.userId 
+    const { id: ruleId } = await params;
+    const rule = await Rule.findOne({
+      _id: ruleId,
+      userId: user.userId,
     });
 
     if (!rule) {
@@ -169,9 +184,9 @@ export async function POST(
     }
 
     // Manually trigger rule execution
-    await RuleEngine.processRules(user.userId, { 
-      type: 'manual', 
-      ruleId: params.id 
+    await RuleEngine.processRules(user.userId, {
+      type: "manual",
+      ruleId: ruleId,
     });
 
     return apiSuccess({ message: "Rule executed successfully" });
