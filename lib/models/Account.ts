@@ -37,8 +37,8 @@ const AccountSchema: Schema = new Schema(
     currency: {
       type: String,
       required: true,
-      default: "USD",
-      enum: ["USD", "EUR", "GBP", "JPY", "CAD", "AUD"],
+      default: "GHS",
+      enum: ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "GHS"],
     },
   },
   {

@@ -250,26 +250,16 @@ export class SampleDataGenerator {
     // Food (daily)
     expenses.push({
       category: "Food",
-      type: "Food",
+      type: "expense",
       amount: Math.round((20 + Math.random() * 30) * variance),
       description: "Daily meals and groceries",
     });
-
-    // Communication (few times a week)
-    if (Math.random() < 0.4) {
-      expenses.push({
-        category: "Communication",
-        type: "Communication",
-        amount: Math.round((5 + Math.random() * 15) * variance),
-        description: "Airtime and data",
-      });
-    }
 
     // Transportation (most weekdays)
     if (date.getDay() >= 1 && date.getDay() <= 5) {
       expenses.push({
         category: "Transportation",
-        type: "Transportation",
+        type: "expense",
         amount: Math.round((10 + Math.random() * 20) * variance),
         description: "Daily transport to work/business",
       });
