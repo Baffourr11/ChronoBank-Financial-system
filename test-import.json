@@ -1,0 +1,48 @@
+{
+  "transactions": [
+    {
+      "date": "2026-01-15",
+      "type": "income",
+      "category": "Salary",
+      "amount": 3000,
+      "description": "Monthly salary",
+      "accountName": "Main Account"
+    },
+    {
+      "date": "2026-01-16",
+      "type": "expense",
+      "category": "Food",
+      "amount": 150,
+      "description": "Grocery shopping",
+      "accountName": "Main Account"
+    },
+    {
+      "date": "2026-01-17",
+      "type": "expense",
+      "category": "Transportation",
+      "amount": 50,
+      "description": "Transport fare",
+      "accountName": "Main Account"
+    },
+    {
+      "date": "2026-02-15",
+      "type": "income",
+      "category": "Salary",
+      "amount": 3200,
+      "description": "Monthly salary with bonus",
+      "accountName": "Main Account"
+    },
+    {
+      "date": "2026-02-20",
+      "type": "expense",
+      "category": "Utilities",
+      "amount": 200,
+      "description": "Electricity bill",
+      "accountName": "Main Account"
+    }
+  ],
+  "options": {
+    "skipDuplicates": true,
+    "createMissingAccounts": false
+  }
+}

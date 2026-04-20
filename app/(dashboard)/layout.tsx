@@ -1,10 +1,12 @@
-'use client';
+// Path: app/(dashboard)/layout.tsx
+"use client";
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
-import Sidebar from '@/components/layout/Sidebar';
-import TopBar from '@/components/layout/TopBar';
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import { DatasetProvider } from "@/lib/contexts/DatasetContext";
+import Sidebar from "@/components/layout/Sidebar";
+import TopBar from "@/components/layout/TopBar";
 
 export default function DashboardLayout({
   children,
@@ -16,7 +18,7 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      router.push('/login');
+      router.push("/login");
     }
   }, [isAuthenticated, loading, router]);
 
@@ -36,14 +38,14 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <TopBar />
-        <main className="flex-1 overflow-auto">
-          {children}
-        </main>
+    <DatasetProvider>
+      <div className="flex h-screen bg-background">
+        <Sidebar />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <TopBar />
+          <main className="flex-1 overflow-auto">{children}</main>
+        </div>
       </div>
-    </div>
+    </DatasetProvider>
   );
 }

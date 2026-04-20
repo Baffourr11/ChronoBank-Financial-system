@@ -13,3 +13,5 @@ export { Rule } from "./Rule";
 export type { IRule, RuleCondition, RuleAction, RuleSchedule } from "./Rule";
 export { RuleExecution } from "./RuleExecution";
 export type { IRuleExecution, RuleExecutionAction } from "./RuleExecution";
+export { Dataset } from "./Dataset";
+export type { IDataset } from "./Dataset";

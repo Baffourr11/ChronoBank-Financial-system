@@ -1,7 +1,23 @@
-'use client';
+// Path: app/(dashboard)/analytics/page.tsx
+"use client";
 
-import { useEffect, useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useEffect, useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { DatasetSelector } from "@/components/dataset/DatasetSelector";
+import { useDataset } from "@/lib/contexts/DatasetContext";
+import {
+  Database,
+  BarChart3,
+  PieChart as PieChartIcon,
+  TrendingUp,
+} from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -16,42 +32,58 @@ import {
   PieChart,
   Pie,
   Cell,
-} from 'recharts';
+} from "recharts";
 
 const COLORS = [
-  'hsl(var(--color-chart-1))',
-  'hsl(var(--color-chart-2))',
-  'hsl(var(--color-chart-3))',
-  'hsl(var(--color-chart-4))',
-  'hsl(var(--color-chart-5))',
+  "hsl(var(--color-chart-1))",
+  "hsl(var(--color-chart-2))",
+  "hsl(var(--color-chart-3))",
+  "hsl(var(--color-chart-4))",
+  "hsl(var(--color-chart-5))",
 ];
 
 export default function AnalyticsPage() {
+  const { selectedDataset } = useDataset();
   const [incomeVsExpense, setIncomeVsExpense] = useState<any[]>([]);
   const [categoryBreakdown, setCategoryBreakdown] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const datasetId = selectedDataset?._id;
+
   useEffect(() => {
+    if (!datasetId) {
+      setIsLoading(false);
+      return;
+    }
+
     const fetchAnalytics = async () => {
       try {
-        const response = await fetch('/api/transactions?limit=1000');
+        const response = await fetch(
+          `/api/transactions?limit=1000&datasetId=${datasetId}`,
+        );
         if (response.ok) {
           const data = await response.json();
           const transactions = data.data.transactions as any[];
 
           // Income vs Expense by month
-          const monthlyData: Record<string, { income: number; expense: number }> = {};
+          const monthlyData: Record<
+            string,
+            { income: number; expense: number }
+          > = {};
           transactions.forEach((tx) => {
             const date = new Date(tx.date);
-            const monthKey = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-            
+            const monthKey = date.toLocaleDateString("en-US", {
+              month: "short",
+              year: "2-digit",
+            });
+
             if (!monthlyData[monthKey]) {
               monthlyData[monthKey] = { income: 0, expense: 0 };
             }
 
-            if (tx.type === 'income') {
+            if (tx.type === "income") {
               monthlyData[monthKey].income += tx.amount;
-            } else if (tx.type === 'expense') {
+            } else if (tx.type === "expense") {
               monthlyData[monthKey].expense += tx.amount;
             }
           });
@@ -69,40 +101,55 @@ export default function AnalyticsPage() {
           // Category breakdown
           const categoryTotals: Record<string, number> = {};
           transactions.forEach((tx) => {
-            if (tx.type === 'expense') {
-              categoryTotals[tx.category] = (categoryTotals[tx.category] || 0) + tx.amount;
+            if (tx.type === "expense") {
+              categoryTotals[tx.category] =
+                (categoryTotals[tx.category] || 0) + tx.amount;
             }
           });
 
-          const categoryChart = Object.entries(categoryTotals).map(([name, value]) => ({
-            name: name.charAt(0).toUpperCase() + name.slice(1),
-            value: parseFloat((value as number).toFixed(2)),
-          }));
+          const categoryChart = Object.entries(categoryTotals).map(
+            ([name, value]) => ({
+              name: name.charAt(0).toUpperCase() + name.slice(1),
+              value: parseFloat((value as number).toFixed(2)),
+            }),
+          );
 
-          setCategoryBreakdown(categoryChart.length > 0 ? categoryChart : [{ name: 'No Data', value: 100 }]);
+          setCategoryBreakdown(
+            categoryChart.length > 0
+              ? categoryChart
+              : [{ name: "No Data", value: 100 }],
+          );
         }
       } catch (error) {
-        console.error('Failed to fetch analytics:', error);
+        console.error("Failed to fetch analytics:", error);
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchAnalytics();
-  }, []);
+  }, [datasetId]);
 
   return (
     <div className="p-8 space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold">Analytics</h1>
-        <p className="text-muted-foreground mt-2">Spending trends and financial insights</p>
-      </div>
+      {/* Dataset Selector */}
+      <DatasetSelector />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Income vs Expense</CardTitle>
-            <CardDescription>Monthly comparison over the last 6 months</CardDescription>
+      {/* Show message if no dataset selected */}
+      {!selectedDataset && (
+        <Card className="border-dashed">
+          <CardContent className="p-8 text-center">
+            <Database className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+            <h3 className="text-lg font-semibold mb-2">Select a Dataset to View Analytics</h3>
+            <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
+              Analytics are computed for specific datasets. Select a dataset above to view spending trends and insights.
+            </p>
+            <Button asChild>
+              <a href="/data/import">Upload New Dataset</a>
+            </Button>
+            <CardDescription>
+              Monthly comparison over the last 6 months
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -114,14 +161,20 @@ export default function AnalyticsPage() {
             ) : (
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={incomeVsExpense}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--color-border))" />
-                  <XAxis dataKey="month" stroke="hsl(var(--color-muted-foreground))" />
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="hsl(var(--color-border))"
+                  />
+                  <XAxis
+                    dataKey="month"
+                    stroke="hsl(var(--color-muted-foreground))"
+                  />
                   <YAxis stroke="hsl(var(--color-muted-foreground))" />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: 'hsl(var(--color-card))',
-                      border: '1px solid hsl(var(--color-border))',
-                      borderRadius: '8px',
+                      backgroundColor: "hsl(var(--color-card))",
+                      border: "1px solid hsl(var(--color-border))",
+                      borderRadius: "8px",
                     }}
                     formatter={(value: any) => `$${value.toFixed(2)}`}
                   />
@@ -160,7 +213,10 @@ export default function AnalyticsPage() {
                     dataKey="value"
                   >
                     {categoryBreakdown.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={COLORS[index % COLORS.length]}
+                      />
                     ))}
                   </Pie>
                   <Tooltip formatter={(value: any) => `$${value.toFixed(2)}`} />
@@ -169,7 +225,8 @@ export default function AnalyticsPage() {
             )}
           </CardContent>
         </Card>
-      </div>
+          </>
+        )}
     </div>
   );
 }
