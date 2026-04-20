@@ -164,6 +164,11 @@ export default function AnalyticsOverviewPage() {
     <div className="space-y-6">
       {/* Dataset Selector */}
       <DatasetSelector />
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Analytics Overview</h1>
+        <div className="flex gap-2">
           <Button variant="outline" onClick={() => handleExportData("csv")}>
             <Download className="w-4 h-4 mr-2" />
             Export CSV
@@ -544,8 +549,6 @@ export default function AnalyticsOverviewPage() {
           </div>
         </CardContent>
       </Card>
-        </>
-      )}
     </div>
   );
 }
