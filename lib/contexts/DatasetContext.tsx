@@ -47,12 +47,10 @@ export function DatasetProvider({ children }: { children: ReactNode }) {
       const response = await fetch("/api/datasets");
       if (response.ok) {
         const result = await response.json();
-        // Handle both { data: [...] } and direct array response
-        const datasetsArray = Array.isArray(result.data)
-          ? result.data
-          : Array.isArray(result)
-            ? result
-            : [];
+        console.log("Dataset API response:", result);
+        // API returns { success: true, data: { datasets: [...] } }
+        const datasetsArray = result.data?.datasets || result.data || [];
+        console.log("Extracted datasets:", datasetsArray);
         setDatasets(datasetsArray);
 
         // If no dataset selected, auto-select the active one

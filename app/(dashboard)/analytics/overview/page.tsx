@@ -165,390 +165,428 @@ export default function AnalyticsOverviewPage() {
       {/* Dataset Selector */}
       <DatasetSelector />
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Analytics Overview</h1>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => handleExportData("csv")}>
-            <Download className="w-4 h-4 mr-2" />
-            Export CSV
-          </Button>
-          <Button variant="outline" onClick={() => handleExportData("json")}>
-            <Download className="w-4 h-4 mr-2" />
-            Export JSON
-          </Button>
-          <Button onClick={fetchAnalyticsData}>
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Refresh
-          </Button>
-        </div>
-      </div>
-
-      {/* Data Quality Alert */}
-      {data && !data.patterns?.patterns.length && (
-        <Alert>
-          <Brain className="h-4 w-4" />
-          <AlertDescription>
-            <div className="flex items-center justify-between">
-              <span>
-                Need more transaction data for accurate pattern analysis.
-                Currently have {data.metadata?.totalTransactions || 0}{" "}
-                transactions.
-              </span>
-              <Button size="sm" variant="outline">
-                Import Data
+      {/* Show message if no dataset selected */}
+      {!selectedDataset ? (
+        <Card className="border-dashed">
+          <CardContent className="p-8 text-center">
+            <Database className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+            <h3 className="text-lg font-semibold mb-2">
+              Select a Dataset to View Analytics
+            </h3>
+            <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
+              Analytics are computed for specific datasets. Select a dataset
+              above to view AI-powered insights and forecasts.
+            </p>
+            <Button asChild>
+              <a href="/data/import">Upload New Dataset</a>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <h1 className="text-3xl font-bold">Analytics Overview</h1>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => handleExportData("csv")}>
+                <Download className="w-4 h-4 mr-2" />
+                Export CSV
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => handleExportData("json")}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Export JSON
+              </Button>
+              <Button onClick={fetchAnalyticsData}>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh
               </Button>
             </div>
-          </AlertDescription>
-        </Alert>
-      )}
+          </div>
 
-      {/* Key Metrics */}
-      {data && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-chart-1" />
-                <div>
-                  <p className="text-sm text-muted-foreground">
-                    Total Insights
-                  </p>
-                  <p className="text-2xl font-bold">{getInsightCount()}</p>
+          {/* Data Quality Alert */}
+          {data && !data.patterns?.patterns.length && (
+            <Alert>
+              <Brain className="h-4 w-4" />
+              <AlertDescription>
+                <div className="flex items-center justify-between">
+                  <span>
+                    Need more transaction data for accurate pattern analysis.
+                    Currently have {data.metadata?.totalTransactions || 0}{" "}
+                    transactions.
+                  </span>
+                  <Button size="sm" variant="outline">
+                    Import Data
+                  </Button>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </AlertDescription>
+            </Alert>
+          )}
 
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-chart-2" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Forecast Days</p>
-                  <p className="text-2xl font-bold">
-                    {data.metadata?.forecastDays || 90}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-2">
-                <Activity className="w-4 h-4 text-chart-3" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Data Points</p>
-                  <p className="text-2xl font-bold">
-                    {data.metadata?.dataPoints || 0}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-chart-4" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Risk Level</p>
-                  <p className="text-2xl font-bold capitalize">
-                    {getRiskLevel()}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Analytics Tabs */}
-      <Tabs
-        value={activeTab}
-        onValueChange={setActiveTab}
-        className="space-y-6"
-      >
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="forecast">Forecast</TabsTrigger>
-          <TabsTrigger value="patterns">Patterns</TabsTrigger>
-          <TabsTrigger value="anomalies">Anomalies</TabsTrigger>
-          <TabsTrigger value="insights">Insights</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="forecast" className="space-y-6">
-          {data?.forecast && (
-            <>
-              <PredictiveCharts
-                forecasts={data.forecast.spendingForecasts || []}
-                cashFlowData={data.forecast.cashFlowForecast || []}
-              />
-
-              {data.forecast.cashFlowIssues?.hasIssues && (
-                <Alert>
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertDescription>
-                    <div className="space-y-2">
-                      <p>
-                        <strong>Cash Flow Issues Detected:</strong>
+          {/* Key Metrics */}
+          {data && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-chart-1" />
+                    <div>
+                      <p className="text-sm text-muted-foreground">
+                        Total Insights
                       </p>
-                      <ul className="list-disc list-inside space-y-1">
-                        {data.forecast.cashFlowIssues.issues.map(
-                          (issue: any, index: number) => (
-                            <li key={index}>
-                              {issue.date}: {issue.description} (Projected
-                              balance: GHS {issue.projectedBalance.toFixed(0)})
-                            </li>
-                          ),
-                        )}
-                      </ul>
+                      <p className="text-2xl font-bold">{getInsightCount()}</p>
                     </div>
-                  </AlertDescription>
-                </Alert>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-chart-2" />
+                    <div>
+                      <p className="text-sm text-muted-foreground">
+                        Forecast Days
+                      </p>
+                      <p className="text-2xl font-bold">
+                        {data.metadata?.forecastDays || 90}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-chart-3" />
+                    <div>
+                      <p className="text-sm text-muted-foreground">
+                        Data Points
+                      </p>
+                      <p className="text-2xl font-bold">
+                        {data.metadata?.dataPoints || 0}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-chart-4" />
+                    <div>
+                      <p className="text-sm text-muted-foreground">
+                        Risk Level
+                      </p>
+                      <p className="text-2xl font-bold capitalize">
+                        {getRiskLevel()}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Analytics Tabs */}
+          <Tabs
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="space-y-6"
+          >
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="forecast">Forecast</TabsTrigger>
+              <TabsTrigger value="patterns">Patterns</TabsTrigger>
+              <TabsTrigger value="anomalies">Anomalies</TabsTrigger>
+              <TabsTrigger value="insights">Insights</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="forecast" className="space-y-6">
+              {data?.forecast && (
+                <>
+                  <PredictiveCharts
+                    forecasts={data.forecast.spendingForecasts || []}
+                    cashFlowData={data.forecast.cashFlowForecast || []}
+                  />
+
+                  {data.forecast.cashFlowIssues?.hasIssues && (
+                    <Alert>
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>
+                        <div className="space-y-2">
+                          <p>
+                            <strong>Cash Flow Issues Detected:</strong>
+                          </p>
+                          <ul className="list-disc list-inside space-y-1">
+                            {data.forecast.cashFlowIssues.issues.map(
+                              (issue: any, index: number) => (
+                                <li key={index}>
+                                  {issue.date}: {issue.description} (Projected
+                                  balance: GHS{" "}
+                                  {issue.projectedBalance.toFixed(0)})
+                                </li>
+                              ),
+                            )}
+                          </ul>
+                        </div>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </TabsContent>
+            </TabsContent>
 
-        <TabsContent value="patterns" className="space-y-6">
-          {data?.patterns && (
-            <PatternHeatmap
-              patterns={data.patterns.patterns || []}
-              anomalies={data.patterns.anomalies || []}
-            />
-          )}
-        </TabsContent>
+            <TabsContent value="patterns" className="space-y-6">
+              {data?.patterns && (
+                <PatternHeatmap
+                  patterns={data.patterns.patterns || []}
+                  anomalies={data.patterns.anomalies || []}
+                />
+              )}
+            </TabsContent>
 
-        <TabsContent value="anomalies" className="space-y-6">
-          {data?.patterns?.anomalies && data.patterns.anomalies.length > 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5" />
-                  Detected Anomalies
-                </CardTitle>
-                <CardDescription>
-                  Unusual transactions that deviate from your normal patterns
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {data.patterns.anomalies.map(
-                    (anomaly: any, index: number) => (
-                      <div key={index} className="border rounded-lg p-4">
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex-1">
-                            <h4 className="font-medium">
-                              {anomaly.description}
-                            </h4>
-                            <p className="text-sm text-muted-foreground mt-1">
-                              Expected: GHS {anomaly.expectedValue.toFixed(2)} |
-                              Actual: GHS {anomaly.actualValue.toFixed(2)}
-                            </p>
+            <TabsContent value="anomalies" className="space-y-6">
+              {data?.patterns?.anomalies &&
+              data.patterns.anomalies.length > 0 ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5" />
+                      Detected Anomalies
+                    </CardTitle>
+                    <CardDescription>
+                      Unusual transactions that deviate from your normal
+                      patterns
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {data.patterns.anomalies.map(
+                        (anomaly: any, index: number) => (
+                          <div key={index} className="border rounded-lg p-4">
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex-1">
+                                <h4 className="font-medium">
+                                  {anomaly.description}
+                                </h4>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  Expected: GHS{" "}
+                                  {anomaly.expectedValue.toFixed(2)} | Actual:
+                                  GHS {anomaly.actualValue.toFixed(2)}
+                                </p>
+                              </div>
+                              <Badge
+                                variant={
+                                  anomaly.severity === "high"
+                                    ? "destructive"
+                                    : "secondary"
+                                }
+                              >
+                                {anomaly.severity}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <span>
+                                Confidence:{" "}
+                                {(anomaly.confidence * 100).toFixed(0)}%
+                              </span>
+                              <span>Type: {anomaly.type}</span>
+                            </div>
                           </div>
+                        ),
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center py-12">
+                    <Brain className="w-12 h-12 text-muted-foreground mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">
+                      No Anomalies Detected
+                    </h3>
+                    <p className="text-muted-foreground text-center">
+                      Your spending patterns appear normal and consistent
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            <TabsContent value="insights" className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Ghanaian Patterns */}
+                {data?.ghanaianPatterns && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Ghanaian Market Insights</CardTitle>
+                      <CardDescription>
+                        Patterns specific to Ghana's informal sector
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">
+                            Payday Spending Pattern
+                          </span>
                           <Badge
                             variant={
-                              anomaly.severity === "high"
-                                ? "destructive"
+                              data.ghanaianPatterns.paydaySpending
+                                ? "default"
                                 : "secondary"
                             }
                           >
-                            {anomaly.severity}
+                            {data.ghanaianPatterns.paydaySpending
+                              ? "Detected"
+                              : "Not Detected"}
                           </Badge>
                         </div>
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>
-                            Confidence: {(anomaly.confidence * 100).toFixed(0)}%
-                          </span>
-                          <span>Type: {anomaly.type}</span>
+
+                        {data.ghanaianPatterns.seasonalFestivals?.length >
+                          0 && (
+                          <div>
+                            <span className="text-sm font-medium">
+                              Seasonal Festival Spending:
+                            </span>
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {data.ghanaianPatterns.seasonalFestivals.map(
+                                (festival: string, index: number) => (
+                                  <Badge
+                                    key={index}
+                                    variant="outline"
+                                    className="text-xs"
+                                  >
+                                    {festival}
+                                  </Badge>
+                                ),
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {data.ghanaianPatterns.informalSectorPatterns?.length >
+                          0 && (
+                          <div>
+                            <span className="text-sm font-medium">
+                              Informal Sector Patterns:
+                            </span>
+                            <div className="mt-2 space-y-1">
+                              {data.ghanaianPatterns.informalSectorPatterns.map(
+                                (pattern: string, index: number) => (
+                                  <div
+                                    key={index}
+                                    className="text-xs text-muted-foreground"
+                                  >
+                                    {pattern}
+                                  </div>
+                                ),
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Data Summary */}
+                {data?.metadata && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Data Summary</CardTitle>
+                      <CardDescription>
+                        Overview of your financial data analysis
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <p className="text-sm text-muted-foreground">
+                              Analysis Period
+                            </p>
+                            <p className="font-medium">
+                              {data.metadata.lookbackDays} days
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">
+                              Total Transactions
+                            </p>
+                            <p className="font-medium">
+                              {data.metadata.totalTransactions}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">
+                              Expense Transactions
+                            </p>
+                            <p className="font-medium">
+                              {data.metadata.expenseTransactions}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">
+                              Income Transactions
+                            </p>
+                            <p className="font-medium">
+                              {data.metadata.incomeTransactions}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    ),
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12">
-                <Brain className="w-12 h-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">
-                  No Anomalies Detected
-                </h3>
-                <p className="text-muted-foreground text-center">
-                  Your spending patterns appear normal and consistent
-                </p>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
 
-        <TabsContent value="insights" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Ghanaian Patterns */}
-            {data?.ghanaianPatterns && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Ghanaian Market Insights</CardTitle>
-                  <CardDescription>
-                    Patterns specific to Ghana's informal sector
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">
-                        Payday Spending Pattern
-                      </span>
-                      <Badge
-                        variant={
-                          data.ghanaianPatterns.paydaySpending
-                            ? "default"
-                            : "secondary"
-                        }
-                      >
-                        {data.ghanaianPatterns.paydaySpending
-                          ? "Detected"
-                          : "Not Detected"}
-                      </Badge>
-                    </div>
+                        {lastUpdated && (
+                          <div className="text-xs text-muted-foreground pt-4 border-t">
+                            Last updated: {lastUpdated.toLocaleString()}
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
 
-                    {data.ghanaianPatterns.seasonalFestivals?.length > 0 && (
-                      <div>
-                        <span className="text-sm font-medium">
-                          Seasonal Festival Spending:
-                        </span>
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {data.ghanaianPatterns.seasonalFestivals.map(
-                            (festival: string, index: number) => (
-                              <Badge
-                                key={index}
-                                variant="outline"
-                                className="text-xs"
-                              >
-                                {festival}
-                              </Badge>
-                            ),
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {data.ghanaianPatterns.informalSectorPatterns?.length >
-                      0 && (
-                      <div>
-                        <span className="text-sm font-medium">
-                          Informal Sector Patterns:
-                        </span>
-                        <div className="mt-2 space-y-1">
-                          {data.ghanaianPatterns.informalSectorPatterns.map(
-                            (pattern: string, index: number) => (
-                              <div
-                                key={index}
-                                className="text-xs text-muted-foreground"
-                              >
-                                {pattern}
-                              </div>
-                            ),
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Data Summary */}
-            {data?.metadata && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Data Summary</CardTitle>
-                  <CardDescription>
-                    Overview of your financial data analysis
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-muted-foreground">
-                          Analysis Period
-                        </p>
-                        <p className="font-medium">
-                          {data.metadata.lookbackDays} days
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">
-                          Total Transactions
-                        </p>
-                        <p className="font-medium">
-                          {data.metadata.totalTransactions}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">
-                          Expense Transactions
-                        </p>
-                        <p className="font-medium">
-                          {data.metadata.expenseTransactions}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">
-                          Income Transactions
-                        </p>
-                        <p className="font-medium">
-                          {data.metadata.incomeTransactions}
-                        </p>
-                      </div>
-                    </div>
-
-                    {lastUpdated && (
-                      <div className="text-xs text-muted-foreground pt-4 border-t">
-                        Last updated: {lastUpdated.toLocaleString()}
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </TabsContent>
-      </Tabs>
-
-      {/* Quick Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Target className="w-5 h-5" />
-            Quick Actions
-          </CardTitle>
-          <CardDescription>Common analytics tasks and tools</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Button variant="outline" className="h-20 flex-col">
-              <Brain className="w-6 h-6 mb-2" />
-              <span className="text-sm">Run Analysis</span>
-            </Button>
-            <Button variant="outline" className="h-20 flex-col">
-              <Calendar className="w-6 h-6 mb-2" />
-              <span className="text-sm">View Forecast</span>
-            </Button>
-            <Button variant="outline" className="h-20 flex-col">
-              <PieChart className="w-6 h-6 mb-2" />
-              <span className="text-sm">Pattern Analysis</span>
-            </Button>
-            <Button variant="outline" className="h-20 flex-col">
-              <Download className="w-6 h-6 mb-2" />
-              <span className="text-sm">Export Data</span>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          {/* Quick Actions */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Target className="w-5 h-5" />
+                Quick Actions
+              </CardTitle>
+              <CardDescription>
+                Common analytics tasks and tools
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Button variant="outline" className="h-20 flex-col">
+                  <Brain className="w-6 h-6 mb-2" />
+                  <span className="text-sm">Run Analysis</span>
+                </Button>
+                <Button variant="outline" className="h-20 flex-col">
+                  <Calendar className="w-6 h-6 mb-2" />
+                  <span className="text-sm">View Forecast</span>
+                </Button>
+                <Button variant="outline" className="h-20 flex-col">
+                  <PieChart className="w-6 h-6 mb-2" />
+                  <span className="text-sm">Pattern Analysis</span>
+                </Button>
+                <Button variant="outline" className="h-20 flex-col">
+                  <Download className="w-6 h-6 mb-2" />
+                  <span className="text-sm">Export Data</span>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

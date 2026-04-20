@@ -1,10 +1,14 @@
+// Path: app/api/datasets/[id]/route.ts
 import { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api";
 import { Dataset, Transaction } from "@/lib/models";
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   try {
     const user = await getCurrentUser();
     if (!user) {
@@ -13,12 +17,15 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     await connectToDatabase();
 
-    const datasetId = params.id;
+    const { id: datasetId } = await params;
     const body = await request.json();
     const { isActive } = body;
 
     // Update dataset active status
-    const dataset = await Dataset.findOne({ _id: datasetId, userId: user.userId });
+    const dataset = await Dataset.findOne({
+      _id: datasetId,
+      userId: user.userId,
+    });
     if (!dataset) {
       return apiError("Dataset not found", 404);
     }
@@ -27,7 +34,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     if (isActive) {
       await Dataset.updateMany(
         { userId: user.userId, _id: { $ne: datasetId } },
-        { isActive: false }
+        { isActive: false },
       );
     }
 
@@ -39,7 +46,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       id: dataset._id.toString(),
       name: dataset.name,
       isActive: dataset.isActive,
-      message: isActive ? "Dataset activated for analysis" : "Dataset deactivated"
+      message: isActive
+        ? "Dataset activated for analysis"
+        : "Dataset deactivated",
     });
   } catch (error) {
     console.error("Update dataset error:", error);
@@ -47,7 +56,10 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   try {
     const user = await getCurrentUser();
     if (!user) {
@@ -56,20 +68,23 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
 
     await connectToDatabase();
 
-    const datasetId = params.id;
-    const dataset = await Dataset.findOne({ _id: datasetId, userId: user.userId });
+    const { id: datasetId } = await params;
+    const dataset = await Dataset.findOne({
+      _id: datasetId,
+      userId: user.userId,
+    });
     if (!dataset) {
       return apiError("Dataset not found", 404);
     }
 
     // Delete associated transactions
-    await Transaction.deleteMany({ userId: user.userId, 'metadata.datasetId': datasetId });
+    await Transaction.deleteMany({ userId: user.userId, datasetId: datasetId });
 
     // Delete the dataset
     await Dataset.findByIdAndDelete(datasetId);
 
     return apiSuccess({
-      message: "Dataset and associated transactions deleted successfully"
+      message: "Dataset and associated transactions deleted successfully",
     });
   } catch (error) {
     console.error("Delete dataset error:", error);

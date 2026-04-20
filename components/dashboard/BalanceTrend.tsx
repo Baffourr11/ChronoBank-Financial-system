@@ -54,8 +54,10 @@ export default function BalanceTrend({ userId }: BalanceTrendProps) {
           const transactionsData = await transactionsResponse.json();
           const accountsData = await accountsResponse.json();
 
-          const transactions = transactionsData.data.transactions as any[];
-          const accounts = accountsData.data as any[];
+          const transactions =
+            transactionsData.data?.transactions || transactionsData.data || [];
+          const accounts =
+            accountsData.data?.accounts || accountsData.data || [];
 
           // Calculate historical balances
           const monthlyBalances = calculateMonthlyBalances(

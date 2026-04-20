@@ -19,9 +19,11 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const includeInactive = searchParams.get("includeInactive") === "true";
 
-    const query = { userId: user.userId };
-    if (!includeInactive) {
-      (query as any).isActive = true;
+    const query: any = { userId: user.userId };
+    // By default, return all datasets (both active and inactive)
+    // Only filter to active-only if includeInactive=false is explicitly set
+    if (searchParams.get("includeInactive") === "false") {
+      query.isActive = true;
     }
 
     const datasets = await Dataset.find(query)

@@ -107,7 +107,10 @@ export default function DataImportPage() {
       const response = await fetch("/api/datasets");
       if (response.ok) {
         const data = await response.json();
-        const datasetsArray = Array.isArray(data.data) ? data.data : [];
+        console.log("Import page - Dataset API response:", data);
+        // API returns { success: true, data: { datasets: [...] } }
+        const datasetsArray = data.data?.datasets || data.data || [];
+        console.log("Import page - Extracted datasets:", datasetsArray);
         setDatasets(datasetsArray);
         const active = datasetsArray.find((d: Dataset) => d.isActive);
         setActiveDataset(
