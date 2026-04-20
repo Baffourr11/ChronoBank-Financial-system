@@ -1,3 +1,4 @@
+// Path: app/api/analytics/scenarios/route.ts
 import { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
@@ -13,17 +14,17 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const type = searchParams.get('type');
+    const type = searchParams.get("type");
 
     await connectToDatabase();
 
     let scenarios = [];
 
-    if (type === 'market_shock') {
+    if (type === "market_shock") {
       scenarios = ScenarioEngine.createMarketShockScenarios();
-    } else if (type === 'income_change') {
+    } else if (type === "income_change") {
       scenarios = ScenarioEngine.createIncomeShockScenarios();
-    } else if (type === 'expense_change') {
+    } else if (type === "expense_change") {
       scenarios = ScenarioEngine.createExpenseShockScenarios();
     } else {
       // Return all scenario templates
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { scenario, projectionDays = 90 } = body;
+    const { scenario, projectionDays = 90, datasetId } = body;
 
     if (!scenario) {
       return apiError("Scenario is required", 400);
@@ -57,14 +58,28 @@ export async function POST(request: NextRequest) {
 
     await connectToDatabase();
 
-    // Get user's financial data
+    // Build query filter - include datasetId if provided
+    const transactionQuery: any = { userId: user.userId };
+    const accountQuery: any = { userId: user.userId };
+
+    if (datasetId) {
+      transactionQuery.datasetId = datasetId;
+      accountQuery.datasetId = datasetId;
+    }
+
+    // Get user's financial data (filtered by dataset if specified)
     const [transactions, accounts] = await Promise.all([
-      Transaction.find({ userId: user.userId }).sort({ date: -1 }).limit(2000),
-      Account.find({ userId: user.userId })
+      Transaction.find(transactionQuery).sort({ date: -1 }).limit(2000),
+      Account.find(accountQuery),
     ]);
 
     // Run the scenario simulation
-    const result = await ScenarioEngine.runScenario(scenario, accounts, transactions, projectionDays);
+    const result = await ScenarioEngine.runScenario(
+      scenario,
+      accounts,
+      transactions,
+      projectionDays,
+    );
 
     return apiSuccess(result);
   } catch (error) {

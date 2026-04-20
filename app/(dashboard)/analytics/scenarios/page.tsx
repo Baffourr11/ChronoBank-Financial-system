@@ -21,6 +21,8 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import ScenarioResults from "@/components/analytics/ScenarioResults";
+import { DatasetSelector } from "@/components/dataset/DatasetSelector";
+import { useDataset } from "@/lib/contexts/DatasetContext";
 import {
   Shield,
   TrendingDown,
@@ -31,6 +33,7 @@ import {
   Activity,
   Target,
   Zap,
+  Database,
 } from "lucide-react";
 
 interface Scenario {
@@ -63,6 +66,7 @@ interface SimulationResult {
 }
 
 export default function ScenariosPage() {
+  const { selectedDataset } = useDataset();
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(
     null,
@@ -72,6 +76,8 @@ export default function ScenariosPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSimulating, setIsSimulating] = useState(false);
   const [customParameters, setCustomParameters] = useState<any>({});
+
+  const datasetId = selectedDataset?._id;
 
   useEffect(() => {
     fetchScenarios();
@@ -109,6 +115,7 @@ export default function ScenariosPage() {
         body: JSON.stringify({
           scenario: scenarioToRun,
           projectionDays: 90,
+          datasetId: datasetId,
         }),
       });
 
@@ -180,324 +187,350 @@ export default function ScenariosPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Scenario Simulator</h1>
-          <p className="text-muted-foreground">
-            Stress test your financial resilience against hypothetical market
-            conditions
-          </p>
-        </div>
-        <Button onClick={fetchScenarios}>
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Refresh Scenarios
-        </Button>
-      </div>
+      {/* Dataset Selector */}
+      <DatasetSelector />
 
-      {/* Scenario Selection */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Available Scenarios */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Target className="w-5 h-5" />
-              Available Scenarios
-            </CardTitle>
-            <CardDescription>
-              Pre-configured scenarios for Ghanaian market conditions
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {scenarios.map((scenario) => (
-                <div
-                  key={scenario.id}
-                  className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-                    selectedScenario?.id === scenario.id
-                      ? "border-primary bg-primary/5"
-                      : "hover:border-primary/50"
-                  }`}
-                  onClick={() => setSelectedScenario(scenario)}
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      {getScenarioIcon(scenario.type)}
-                      <h4 className="font-medium">{scenario.name}</h4>
-                    </div>
-                    <Badge variant="outline" className="text-xs">
-                      {scenario.type.replace("_", " ")}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    {scenario.description}
-                  </p>
-
-                  {/* Scenario Parameters */}
-                  <div className="space-y-2 text-xs">
-                    {Object.entries(scenario.parameters).map(([key, value]) => (
-                      <div key={key} className="flex justify-between">
-                        <span className="text-muted-foreground capitalize">
-                          {key.replace(/([A-Z])/g, " $1").trim()}:
-                        </span>
-                        <span className="font-medium">
-                          {typeof value === "number"
-                            ? `${value}%`
-                            : typeof value === "object" &&
-                                value !== null &&
-                                (value as AmountFrequency).amount
-                              ? `GHS ${(value as AmountFrequency).amount}${(value as AmountFrequency).frequency ? ` ${(value as AmountFrequency).frequency}` : ""}`
-                              : String(value)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center justify-between mt-4 pt-3 border-t">
-                    <span className="text-xs text-muted-foreground">
-                      Duration: {scenario.duration} days
-                    </span>
-                    <Button
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        runScenario(scenario);
-                      }}
-                      disabled={isSimulating}
-                    >
-                      {isSimulating ? (
-                        <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
-                      ) : (
-                        <Play className="w-3 h-3 mr-1" />
-                      )}
-                      Run
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Custom Scenario Builder */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Zap className="w-5 h-5" />
-              Custom Scenario
-            </CardTitle>
-            <CardDescription>
-              Create your own scenario with custom parameters
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-6">
-              {/* Scenario Type Selection */}
-              <div>
-                <label className="text-sm font-medium mb-2 block">
-                  Scenario Type
-                </label>
-                <Select
-                  onValueChange={(value) => {
-                    const scenario = scenarios.find((s) => s.id === value);
-                    if (scenario) {
-                      setSelectedScenario(scenario);
-                      setCustomParameters({ ...scenario.parameters });
-                    }
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a scenario template" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {scenarios.map((scenario) => (
-                      <SelectItem key={scenario.id} value={scenario.id}>
-                        {scenario.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Custom Parameters */}
-              {selectedScenario && (
-                <div className="space-y-4">
-                  <h4 className="text-sm font-medium">Adjust Parameters</h4>
-
-                  {Object.entries(selectedScenario.parameters).map(
-                    ([key, defaultValue]) => {
-                      if (typeof defaultValue !== "number") return null;
-
-                      return (
-                        <div key={key} className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <label className="text-sm font-medium capitalize">
-                              {key.replace(/([A-Z])/g, " $1").trim()}
-                            </label>
-                            <span className="text-sm font-medium">
-                              {customParameters[key] || defaultValue}%
-                            </span>
-                          </div>
-                          <Slider
-                            value={[customParameters[key] || defaultValue]}
-                            onValueChange={(value) => {
-                              setCustomParameters((prev: any) => ({
-                                ...prev,
-                                [key]: value[0],
-                              }));
-                            }}
-                            max={100}
-                            min={0}
-                            step={1}
-                            className="w-full"
-                          />
-                        </div>
-                      );
-                    },
-                  )}
-                </div>
-              )}
-
-              {/* Run Custom Scenario */}
-              <Button
-                className="w-full"
-                onClick={() =>
-                  selectedScenario &&
-                  runScenario(selectedScenario, customParameters)
-                }
-                disabled={!selectedScenario || isSimulating}
-              >
-                {isSimulating ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                    Simulating...
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4 mr-2" />
-                    Run Custom Scenario
-                  </>
-                )}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Simulation Results */}
-      {simulationResult && (
-        <ScenarioResults
-          result={simulationResult}
-          onRunNewScenario={() => {
-            setSimulationResult(null);
-            setSelectedScenario(null);
-            setCustomParameters({});
-          }}
-        />
-      )}
-
-      {/* Quick Scenarios */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Shield className="w-5 h-5" />
-            Quick Stress Tests
-          </CardTitle>
-          <CardDescription>
-            Common scenarios for Ghanaian market conditions
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Button
-              variant="outline"
-              className="h-20 flex-col"
-              onClick={() => {
-                const scenario = scenarios.find(
-                  (s) => s.id === "currency_devaluation_20",
-                );
-                if (scenario) runScenario(scenario);
-              }}
-              disabled={isSimulating}
-            >
-              <DollarSign className="w-6 h-6 mb-2" />
-              <span className="text-sm">20% Devaluation</span>
-            </Button>
-
-            <Button
-              variant="outline"
-              className="h-20 flex-col"
-              onClick={() => {
-                const scenario = scenarios.find(
-                  (s) => s.id === "inflation_spike",
-                );
-                if (scenario) runScenario(scenario);
-              }}
-              disabled={isSimulating}
-            >
-              <Activity className="w-6 h-6 mb-2" />
-              <span className="text-sm">Inflation Spike</span>
-            </Button>
-
-            <Button
-              variant="outline"
-              className="h-20 flex-col"
-              onClick={() => {
-                const scenario = scenarios.find((s) => s.id === "job_loss");
-                if (scenario) runScenario(scenario);
-              }}
-              disabled={isSimulating}
-            >
-              <TrendingDown className="w-6 h-6 mb-2" />
-              <span className="text-sm">Job Loss</span>
-            </Button>
-
-            <Button
-              variant="outline"
-              className="h-20 flex-col"
-              onClick={() => {
-                const scenario = scenarios.find(
-                  (s) => s.id === "medical_emergency",
-                );
-                if (scenario) runScenario(scenario);
-              }}
-              disabled={isSimulating}
-            >
-              <AlertTriangle className="w-6 h-6 mb-2" />
-              <span className="text-sm">Medical Emergency</span>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Risk Assessment Info */}
-      <Alert>
-        <AlertTriangle className="h-4 w-4" />
-        <AlertDescription>
-          <div className="space-y-2">
-            <p>
-              <strong>Understanding Risk Levels:</strong>
+      {/* Show message if no dataset selected */}
+      {!selectedDataset ? (
+        <Card className="border-dashed">
+          <CardContent className="p-8 text-center">
+            <Database className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+            <h3 className="text-lg font-semibold mb-2">
+              Select a Dataset to Run Scenarios
+            </h3>
+            <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
+              Scenario simulations are based on your financial data. Select a
+              dataset above to run stress tests and what-if analysis.
             </p>
-            <ul className="list-disc list-inside space-y-1 text-sm">
-              <li>
-                <strong>Low:</strong> Minimal impact on financial stability
-              </li>
-              <li>
-                <strong>Medium:</strong> Some disruption, manageable with
-                adjustments
-              </li>
-              <li>
-                <strong>High:</strong> Significant impact, requires immediate
-                action
-              </li>
-              <li>
-                <strong>Critical:</strong> Severe impact, emergency measures
-                needed
-              </li>
-            </ul>
+            <Button asChild>
+              <a href="/data/import">Upload New Dataset</a>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold">Scenario Simulator</h1>
+              <p className="text-muted-foreground">
+                Stress test your financial resilience against hypothetical
+                market conditions
+              </p>
+            </div>
+            <Button onClick={fetchScenarios}>
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Refresh Scenarios
+            </Button>
           </div>
-        </AlertDescription>
-      </Alert>
+
+          {/* Scenario Selection */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Available Scenarios */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Target className="w-5 h-5" />
+                  Available Scenarios
+                </CardTitle>
+                <CardDescription>
+                  Pre-configured scenarios for Ghanaian market conditions
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {scenarios.map((scenario) => (
+                    <div
+                      key={scenario.id}
+                      className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                        selectedScenario?.id === scenario.id
+                          ? "border-primary bg-primary/5"
+                          : "hover:border-primary/50"
+                      }`}
+                      onClick={() => setSelectedScenario(scenario)}
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          {getScenarioIcon(scenario.type)}
+                          <h4 className="font-medium">{scenario.name}</h4>
+                        </div>
+                        <Badge variant="outline" className="text-xs">
+                          {scenario.type.replace("_", " ")}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        {scenario.description}
+                      </p>
+
+                      {/* Scenario Parameters */}
+                      <div className="space-y-2 text-xs">
+                        {Object.entries(scenario.parameters).map(
+                          ([key, value]) => (
+                            <div key={key} className="flex justify-between">
+                              <span className="text-muted-foreground capitalize">
+                                {key.replace(/([A-Z])/g, " $1").trim()}:
+                              </span>
+                              <span className="font-medium">
+                                {typeof value === "number"
+                                  ? `${value}%`
+                                  : typeof value === "object" &&
+                                      value !== null &&
+                                      (value as AmountFrequency).amount
+                                    ? `GHS ${(value as AmountFrequency).amount}${(value as AmountFrequency).frequency ? ` ${(value as AmountFrequency).frequency}` : ""}`
+                                    : String(value)}
+                              </span>
+                            </div>
+                          ),
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between mt-4 pt-3 border-t">
+                        <span className="text-xs text-muted-foreground">
+                          Duration: {scenario.duration} days
+                        </span>
+                        <Button
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            runScenario(scenario);
+                          }}
+                          disabled={isSimulating}
+                        >
+                          {isSimulating ? (
+                            <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
+                          ) : (
+                            <Play className="w-3 h-3 mr-1" />
+                          )}
+                          Run
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Custom Scenario Builder */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Zap className="w-5 h-5" />
+                  Custom Scenario
+                </CardTitle>
+                <CardDescription>
+                  Create your own scenario with custom parameters
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  {/* Scenario Type Selection */}
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">
+                      Scenario Type
+                    </label>
+                    <Select
+                      onValueChange={(value) => {
+                        const scenario = scenarios.find((s) => s.id === value);
+                        if (scenario) {
+                          setSelectedScenario(scenario);
+                          setCustomParameters({ ...scenario.parameters });
+                        }
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a scenario template" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {scenarios.map((scenario) => (
+                          <SelectItem key={scenario.id} value={scenario.id}>
+                            {scenario.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Custom Parameters */}
+                  {selectedScenario && (
+                    <div className="space-y-4">
+                      <h4 className="text-sm font-medium">Adjust Parameters</h4>
+
+                      {Object.entries(selectedScenario.parameters).map(
+                        ([key, defaultValue]) => {
+                          if (typeof defaultValue !== "number") return null;
+
+                          return (
+                            <div key={key} className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <label className="text-sm font-medium capitalize">
+                                  {key.replace(/([A-Z])/g, " $1").trim()}
+                                </label>
+                                <span className="text-sm font-medium">
+                                  {customParameters[key] || defaultValue}%
+                                </span>
+                              </div>
+                              <Slider
+                                value={[customParameters[key] || defaultValue]}
+                                onValueChange={(value) => {
+                                  setCustomParameters((prev: any) => ({
+                                    ...prev,
+                                    [key]: value[0],
+                                  }));
+                                }}
+                                max={100}
+                                min={0}
+                                step={1}
+                                className="w-full"
+                              />
+                            </div>
+                          );
+                        },
+                      )}
+                    </div>
+                  )}
+
+                  {/* Run Custom Scenario */}
+                  <Button
+                    className="w-full"
+                    onClick={() =>
+                      selectedScenario &&
+                      runScenario(selectedScenario, customParameters)
+                    }
+                    disabled={!selectedScenario || isSimulating}
+                  >
+                    {isSimulating ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        Simulating...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-4 h-4 mr-2" />
+                        Run Custom Scenario
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Simulation Results */}
+          {simulationResult && (
+            <ScenarioResults
+              result={simulationResult}
+              onRunNewScenario={() => {
+                setSimulationResult(null);
+                setSelectedScenario(null);
+                setCustomParameters({});
+              }}
+            />
+          )}
+
+          {/* Quick Scenarios */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="w-5 h-5" />
+                Quick Stress Tests
+              </CardTitle>
+              <CardDescription>
+                Common scenarios for Ghanaian market conditions
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Button
+                  variant="outline"
+                  className="h-20 flex-col"
+                  onClick={() => {
+                    const scenario = scenarios.find(
+                      (s) => s.id === "currency_devaluation_20",
+                    );
+                    if (scenario) runScenario(scenario);
+                  }}
+                  disabled={isSimulating}
+                >
+                  <DollarSign className="w-6 h-6 mb-2" />
+                  <span className="text-sm">20% Devaluation</span>
+                </Button>
+
+                <Button
+                  variant="outline"
+                  className="h-20 flex-col"
+                  onClick={() => {
+                    const scenario = scenarios.find(
+                      (s) => s.id === "inflation_spike",
+                    );
+                    if (scenario) runScenario(scenario);
+                  }}
+                  disabled={isSimulating}
+                >
+                  <Activity className="w-6 h-6 mb-2" />
+                  <span className="text-sm">Inflation Spike</span>
+                </Button>
+
+                <Button
+                  variant="outline"
+                  className="h-20 flex-col"
+                  onClick={() => {
+                    const scenario = scenarios.find((s) => s.id === "job_loss");
+                    if (scenario) runScenario(scenario);
+                  }}
+                  disabled={isSimulating}
+                >
+                  <TrendingDown className="w-6 h-6 mb-2" />
+                  <span className="text-sm">Job Loss</span>
+                </Button>
+
+                <Button
+                  variant="outline"
+                  className="h-20 flex-col"
+                  onClick={() => {
+                    const scenario = scenarios.find(
+                      (s) => s.id === "medical_emergency",
+                    );
+                    if (scenario) runScenario(scenario);
+                  }}
+                  disabled={isSimulating}
+                >
+                  <AlertTriangle className="w-6 h-6 mb-2" />
+                  <span className="text-sm">Medical Emergency</span>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Risk Assessment Info */}
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              <div className="space-y-2">
+                <p>
+                  <strong>Understanding Risk Levels:</strong>
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-sm">
+                  <li>
+                    <strong>Low:</strong> Minimal impact on financial stability
+                  </li>
+                  <li>
+                    <strong>Medium:</strong> Some disruption, manageable with
+                    adjustments
+                  </li>
+                  <li>
+                    <strong>High:</strong> Significant impact, requires
+                    immediate action
+                  </li>
+                  <li>
+                    <strong>Critical:</strong> Severe impact, emergency measures
+                    needed
+                  </li>
+                </ul>
+              </div>
+            </AlertDescription>
+          </Alert>
+        </>
+      )}
     </div>
   );
 }

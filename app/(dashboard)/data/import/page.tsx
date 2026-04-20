@@ -13,20 +13,16 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertTriangle,
   CheckCircle,
   Database,
   Download,
   FileText,
+  Trash2,
   Upload,
   Zap,
-  Trash2,
-  Settings,
-  Calendar,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -111,8 +107,9 @@ export default function DataImportPage() {
       const response = await fetch("/api/datasets");
       if (response.ok) {
         const data = await response.json();
-        setDatasets(data.data);
-        const active = data.data.find((d: Dataset) => d.isActive);
+        const datasetsArray = Array.isArray(data.data) ? data.data : [];
+        setDatasets(datasetsArray);
+        const active = datasetsArray.find((d: Dataset) => d.isActive);
         setActiveDataset(active || null);
       }
     } catch (error) {
@@ -545,45 +542,38 @@ export default function DataImportPage() {
       </div>
 
       {/* Template Downloads */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Download className="w-5 h-5" />
-            Download Templates
-          </CardTitle>
-          <CardDescription>
-            Get started with pre-formatted Excel and CSV templates
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Button
-              onClick={() => downloadTemplate("excel")}
-              variant="outline"
-              className="h-20 flex flex-col items-center justify-center"
-            >
-              <FileText className="w-6 h-6 mb-2" />
-              Download Excel Template
-              <span className="text-xs text-muted-foreground">
-                .xlsx format
-              </span>
-            </Button>
-            <Button
-              onClick={() => downloadTemplate("csv")}
-              variant="outline"
-              className="h-20 flex flex-col items-center justify-center"
-            >
-              <FileText className="w-6 h-6 mb-2" />
-              Download CSV Template
-              <span className="text-xs text-muted-foreground">.csv format</span>
-            </Button>
-          </div>
-          <div className="text-sm text-muted-foreground mt-4">
-            Templates include sample data with proper headers for ChronoBank
-            import
-          </div>
-        </CardContent>
-      </Card>
+      <div className="w-full flex justify-center items-center xgrid-cols-1 xmd:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Download className="w-5 h-5" />
+              Download Templates
+            </CardTitle>
+            <CardDescription>
+              Get started with pre-formatted Excel and CSV templates
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex justify-center items-center xgrid-cols-1 xmd:grid-cols-2 gap-4">
+              <Button
+                onClick={() => downloadTemplate("csv")}
+                variant="outline"
+                className="h-20 flex flex-col items-center justify-center"
+              >
+                <FileText className="w-6 h-6 mb-2" />
+                Download CSV Template
+                <span className="text-xs text-muted-foreground">
+                  .csv format
+                </span>
+              </Button>
+            </div>
+            <div className="text-sm text-muted-foreground mt-4">
+              Templates include sample data with proper headers for ChronoBank
+              import
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Import Results */}
       {importResult && (
