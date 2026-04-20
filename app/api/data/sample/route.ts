@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import { apiSuccess, apiError } from "@/lib/api";
-import { Transaction, Account } from "@/lib/models";
+import { Transaction, Account, Dataset } from "@/lib/models";
 import { SampleDataGenerator } from "@/lib/data/sampleDataGenerator";
 
 export async function POST(request: NextRequest) {
@@ -21,13 +21,38 @@ export async function POST(request: NextRequest) {
     // Generate sample data
     const sampleData = SampleDataGenerator.generateHistoricalData(options);
 
+    // Create dataset record FIRST
+    const transactions = sampleData.transactions;
+    const dates = transactions.map((tx) => new Date(tx.date));
+    const dateRange = {
+      start: dates[0] || new Date(),
+      end: dates[dates.length - 1] || new Date(),
+    };
+
+    const dataset = await Dataset.create({
+      userId: user.userId,
+      name: `Sample Data ${new Date().toLocaleDateString()}`,
+      description: `Generated sample data with ${options.monthsOfHistory} months of history`,
+      transactionCount: 0, // Will update after processing
+      dateRange,
+      isActive: true,
+      metadata: {
+        source: "sample",
+        format: "json",
+        importedAt: new Date(),
+      },
+    });
+
+    const datasetId = dataset._id;
+
     let createdAccounts = [];
 
     if (generateAccounts) {
-      // Create accounts first
+      // Create accounts first with datasetId
       for (const accountData of sampleData.accounts) {
         const account = await Account.create({
           userId: user.userId,
+          datasetId: datasetId,
           name: accountData.name,
           type: accountData.type,
           balance: accountData.balance,
@@ -36,8 +61,13 @@ export async function POST(request: NextRequest) {
         createdAccounts.push(account);
       }
     } else {
-      // Use existing accounts
-      createdAccounts = await Account.find({ userId: user.userId });
+      // Use existing accounts - update them with datasetId
+      const existingAccounts = await Account.find({ userId: user.userId });
+      for (const account of existingAccounts) {
+        account.datasetId = datasetId;
+        await account.save();
+        createdAccounts.push(account);
+      }
     }
 
     // Create transactions
@@ -71,6 +101,7 @@ export async function POST(request: NextRequest) {
 
         await Transaction.create({
           userId: user.userId,
+          datasetId: datasetId,
           accountId: accountId,
           type: transactionData.type,
           category: transactionData.category,
@@ -91,6 +122,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Update dataset with actual transaction count
+    await Dataset.findByIdAndUpdate(datasetId, {
+      transactionCount: createdTransactions,
+    });
+
     return apiSuccess({
       created: {
         accounts: createdAccounts.length,
@@ -104,6 +140,11 @@ export async function POST(request: NextRequest) {
         start: sampleData.transactions[0]?.date,
         end: sampleData.transactions[sampleData.transactions.length - 1]?.date,
         totalTransactions: sampleData.transactions.length,
+      },
+      dataset: {
+        id: dataset._id.toString(),
+        name: dataset.name,
+        transactionCount: createdTransactions,
       },
       message: `Successfully created ${createdAccounts.length} accounts and ${createdTransactions} transactions`,
     });

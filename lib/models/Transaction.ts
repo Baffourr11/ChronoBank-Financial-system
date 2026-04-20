@@ -3,6 +3,7 @@ import mongoose, { Schema, Document } from "mongoose";
 
 export interface ITransaction extends Document {
   userId: mongoose.Types.ObjectId;
+  datasetId?: mongoose.Types.ObjectId;
   accountId: mongoose.Types.ObjectId;
   type: "income" | "expense" | "transfer";
   category: string;
@@ -23,6 +24,11 @@ const TransactionSchema: Schema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "User",
       required: true,
+    },
+    datasetId: {
+      type: Schema.Types.ObjectId,
+      ref: "Dataset",
+      required: false,
     },
     accountId: {
       type: Schema.Types.ObjectId,
@@ -88,6 +94,7 @@ const TransactionSchema: Schema = new Schema(
 
 // Indexes
 TransactionSchema.index({ userId: 1 });
+TransactionSchema.index({ datasetId: 1 });
 TransactionSchema.index({ accountId: 1 });
 TransactionSchema.index({ date: -1 });
 TransactionSchema.index({ category: 1 });

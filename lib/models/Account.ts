@@ -3,6 +3,7 @@ import mongoose, { Schema, Document } from "mongoose";
 
 export interface IAccount extends Document {
   userId: mongoose.Types.ObjectId;
+  datasetId?: mongoose.Types.ObjectId;
   name: string;
   type: "checking" | "savings" | "investment" | "credit";
   balance: number;
@@ -16,6 +17,11 @@ const AccountSchema: Schema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "User",
       required: true,
+    },
+    datasetId: {
+      type: Schema.Types.ObjectId,
+      ref: "Dataset",
+      required: false,
     },
     name: {
       type: String,
@@ -48,6 +54,7 @@ const AccountSchema: Schema = new Schema(
 
 // Indexes
 AccountSchema.index({ userId: 1 });
+AccountSchema.index({ datasetId: 1 });
 
 export const Account =
   mongoose.models.Account || mongoose.model<IAccount>("Account", AccountSchema);

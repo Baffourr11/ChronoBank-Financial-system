@@ -27,7 +27,7 @@ import {
 import { useEffect, useState } from "react";
 
 interface Dataset {
-  id: string;
+  _id: string;
   name: string;
   description?: string;
   transactionCount: number;
@@ -55,7 +55,7 @@ interface ImportResult {
   accounts: string[];
   message: string;
   dataset?: {
-    id: string;
+    _id: string;
     name: string;
     description: string;
     transactionCount: number;
@@ -110,7 +110,9 @@ export default function DataImportPage() {
         const datasetsArray = Array.isArray(data.data) ? data.data : [];
         setDatasets(datasetsArray);
         const active = datasetsArray.find((d: Dataset) => d.isActive);
-        setActiveDataset(active || null);
+        setActiveDataset(
+          active || (datasetsArray.length > 0 ? datasetsArray[0] : null),
+        );
       }
     } catch (error) {
       console.error("Failed to fetch datasets:", error);
@@ -265,7 +267,30 @@ export default function DataImportPage() {
 
       if (response.ok) {
         const result = await response.json();
-        setImportResult(result.data);
+        // Format the result to match ImportResult interface
+        const importData = result.data;
+        setImportResult({
+          total: importData.dataRange?.totalTransactions || 0,
+          imported: importData.created?.transactions || 0,
+          skipped: importData.skipped?.transactions || 0,
+          errors: importData.errors || [],
+          accounts: [],
+          message: importData.message || "Sample data generated successfully",
+          dataset: importData.dataset
+            ? {
+                _id: importData.dataset.id,
+                name: importData.dataset.name,
+                description: "Generated sample data",
+                transactionCount: importData.dataset.transactionCount,
+                dateRange: importData.dataRange,
+                metadata: {
+                  source: "sample",
+                  format: "json",
+                  importedAt: new Date().toISOString(),
+                },
+              }
+            : undefined,
+        });
         fetchDatasets(); // Refresh datasets
         fetchImportStats(); // Refresh stats
       } else {
@@ -483,13 +508,13 @@ export default function DataImportPage() {
               <div className="space-y-3">
                 {datasets.map((dataset) => (
                   <div
-                    key={dataset.id}
+                    key={dataset._id}
                     className={`p-4 border rounded-lg cursor-pointer transition-colors ${
                       dataset.isActive
                         ? "border-blue-500 bg-blue-50"
                         : "border-gray-200 hover:border-gray-300"
                     }`}
-                    onClick={() => activateDataset(dataset.id)}
+                    onClick={() => activateDataset(dataset._id)}
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
@@ -508,12 +533,12 @@ export default function DataImportPage() {
                           </Badge>
                           <Badge
                             variant={
-                              dataset.metadata.source === "upload"
+                              dataset.metadata?.source === "upload"
                                 ? "default"
                                 : "secondary"
                             }
                           >
-                            {dataset.metadata.source}
+                            {dataset.metadata?.source || "unknown"}
                           </Badge>
                         </div>
                       </div>
@@ -526,7 +551,7 @@ export default function DataImportPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => deleteDataset(dataset.id)}
+                          onClick={() => deleteDataset(dataset._id)}
                           className="text-red-600 hover:text-red-700"
                         >
                           <Trash2 className="w-4 h-4" />
