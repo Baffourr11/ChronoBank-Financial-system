@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { DatasetProvider } from "@/lib/contexts/DatasetContext";
 import Sidebar from "@/components/layout/Sidebar";
 import TopBar from "@/components/layout/TopBar";
+import MobileNav from "@/components/layout/MobileNav";
 
 export default function DashboardLayout({
   children,
@@ -26,7 +27,7 @@ export default function DashboardLayout({
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="text-center">
-          <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-muted-foreground">Loading...</p>
         </div>
       </div>
@@ -40,10 +41,15 @@ export default function DashboardLayout({
   return (
     <DatasetProvider>
       <div className="flex h-screen bg-background">
-        <Sidebar />
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="hidden md:flex shrink-0">
+          <Sidebar />
+        </div>
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+          <MobileNav />
           <TopBar />
-          <main className="flex-1 overflow-auto p-8">{children}</main>
+          <main className="flex-1 overflow-auto p-4 md:p-8 min-w-0">
+            <div className="mx-auto w-full max-w-7xl min-w-0">{children}</div>
+          </main>
         </div>
       </div>
     </DatasetProvider>

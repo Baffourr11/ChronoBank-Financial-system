@@ -23,6 +23,7 @@ interface Dataset {
   metadata: {
     source: string;
     format: string;
+    importedAt?: string;
   };
 }
 
@@ -32,7 +33,7 @@ interface DatasetContextType {
   loading: boolean;
   selectDataset: (dataset: Dataset) => void;
   clearSelection: () => void;
-  refreshDatasets: () => Promise<void>;
+  refreshDatasets: (preferDatasetId?: string) => Promise<void>;
 }
 
 const DatasetContext = createContext<DatasetContextType | undefined>(undefined);
@@ -42,27 +43,39 @@ export function DatasetProvider({ children }: { children: ReactNode }) {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchDatasets = async () => {
+  const fetchDatasets = async (preferDatasetId?: string) => {
     try {
       const response = await fetch("/api/datasets");
       if (response.ok) {
         const result = await response.json();
-        console.log("Dataset API response:", result);
-        // API returns { success: true, data: { datasets: [...] } }
         const datasetsArray = result.data?.datasets || result.data || [];
-        console.log("Extracted datasets:", datasetsArray);
         setDatasets(datasetsArray);
 
-        // If no dataset selected, auto-select the active one
-        if (!selectedDataset && datasetsArray.length > 0) {
-          const active = datasetsArray.find((d: Dataset) => d.isActive);
-          if (active) {
-            setSelectedDataset(active);
-          } else {
-            // If no active dataset, select the first one
-            setSelectedDataset(datasetsArray[0]);
+        if (datasetsArray.length === 0) {
+          setSelectedDataset(null);
+          return;
+        }
+
+        if (preferDatasetId) {
+          const preferred = datasetsArray.find(
+            (d: Dataset) => d._id === preferDatasetId,
+          );
+          if (preferred) {
+            setSelectedDataset(preferred);
+            return;
           }
         }
+
+        setSelectedDataset((current) => {
+          if (current) {
+            const stillExists = datasetsArray.find(
+              (d: Dataset) => d._id === current._id,
+            );
+            if (stillExists) return stillExists;
+          }
+          const active = datasetsArray.find((d: Dataset) => d.isActive);
+          return active ?? datasetsArray[0];
+        });
       }
     } catch (error) {
       console.error("Failed to fetch datasets:", error);
@@ -83,9 +96,9 @@ export function DatasetProvider({ children }: { children: ReactNode }) {
     setSelectedDataset(null);
   };
 
-  const refreshDatasets = async () => {
+  const refreshDatasets = async (preferDatasetId?: string) => {
     setLoading(true);
-    await fetchDatasets();
+    await fetchDatasets(preferDatasetId);
   };
 
   return (

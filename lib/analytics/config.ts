@@ -106,7 +106,7 @@ export const MESSAGES = {
   INSUFFICIENT_DATA: 'Not enough transaction data for accurate analysis. Continue using the app to improve predictions.',
   PATTERN_NOT_FOUND: 'No clear spending patterns detected in your data.',
   HIGH_VOLATILITY: 'Your spending shows high volatility. Consider budgeting for better financial stability.',
-  CASH_FLOW_WARNING: 'Potential cash flow issues detected. Review your spending and consider running scenarios.',
+  CASH_FLOW_WARNING: 'Potential cash flow issues detected. Review your spending in Analytics.',
   CURRENCY_RISK: 'Currency depreciation risk detected. Consider diversifying your currency holdings.',
   RULE_EXECUTION_SUCCESS: 'Financial rule executed successfully.',
   RULE_EXECUTION_FAILED: 'Failed to execute financial rule. Please check your account balance.',

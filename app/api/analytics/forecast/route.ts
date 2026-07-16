@@ -1,78 +1,109 @@
-// Path: app/api/analytics/forecast/route.ts
 import { NextRequest } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { getAuthenticatedContext } from "@/lib/api/helpers";
 import { apiSuccess, apiError } from "@/lib/api";
-import { Transaction, Account } from "@/lib/models";
+import { toITransaction, toIAccount } from "@/lib/mappers";
+import type { AccountRow, TransactionRow } from "@/lib/supabase/types";
 import { PatternDetector } from "@/lib/analytics/PatternDetector";
 import { Forecaster } from "@/lib/analytics/Forecaster";
+import {
+  getDatasetIdFromRequest,
+  resolveDatasetId,
+} from "@/lib/dataset/resolveDataset";
+import { persistForecastInsights } from "@/lib/intelligence/persistInsights";
+import { RuleEngine } from "@/lib/rules/RuleEngine";
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await getCurrentUser();
+    const { supabase, user } = await getAuthenticatedContext();
     if (!user) {
       return apiError("Unauthorized", 401);
     }
 
-    await connectToDatabase();
-
     const { searchParams } = new URL(request.url);
     const forecastDays = parseInt(searchParams.get("days") || "90");
     const currentBalance = parseFloat(searchParams.get("balance") || "0");
-    const datasetId = searchParams.get("datasetId");
 
-    // Build query - filter by dataset if provided
-    const transactionQuery: any = { userId: user.userId };
-    const accountQuery: any = { userId: user.userId };
-    if (datasetId) {
-      transactionQuery.datasetId = datasetId;
-      accountQuery.datasetId = datasetId;
+    const datasetId = await resolveDatasetId(
+      supabase,
+      user.userId,
+      getDatasetIdFromRequest(searchParams),
+    );
+
+    if (!datasetId) {
+      return apiError("No dataset selected", 400);
     }
 
-    // Get user's transactions and accounts
-    const [transactions, accounts] = await Promise.all([
-      Transaction.find(transactionQuery).sort({ date: -1 }).limit(2000),
-      Account.find(accountQuery),
+    const [{ data: txRows }, { data: accRows }] = await Promise.all([
+      supabase
+        .from("transactions")
+        .select("*")
+        .eq("user_id", user.userId)
+        .eq("dataset_id", datasetId)
+        .order("date", { ascending: false })
+        .limit(2000),
+      supabase
+        .from("accounts")
+        .select("*")
+        .eq("user_id", user.userId)
+        .eq("dataset_id", datasetId),
     ]);
 
-    // Detect patterns first
-    const patterns = PatternDetector.detectSpendingPatterns(transactions);
+    const transactions = ((txRows ?? []) as TransactionRow[]).map(toITransaction);
+    const accounts = ((accRows ?? []) as AccountRow[]).map(toIAccount);
 
-    // Generate forecasts
-    const spendingForecasts = Forecaster.generateSpendingForecast(
+    const patterns = PatternDetector.detectSpendingPatterns(transactions);
+    const spendingForecasts = Forecaster.generateDailySpendingForecast(
+      transactions,
+      patterns,
+      forecastDays,
+    );
+    const spendingPeriodSummaries = Forecaster.generateSpendingForecast(
       transactions,
       patterns,
       forecastDays,
     );
 
-    // Generate cash flow forecast
     const totalBalance =
       currentBalance > 0
         ? currentBalance
         : accounts.reduce((sum, acc) => sum + acc.balance, 0);
+
     const cashFlowForecast = Forecaster.generateCashFlowForecast(
       transactions,
       totalBalance,
       forecastDays,
     );
-
-    // Generate seasonal forecast
     const seasonalForecast = Forecaster.generateSeasonalForecast(
       transactions,
       patterns,
     );
-
-    // Detect cash flow issues
     const cashFlowIssues = Forecaster.detectCashFlowIssues(cashFlowForecast);
+
+    await persistForecastInsights(supabase, user.userId, datasetId, {
+      cashFlowForecast,
+      cashFlowIssues,
+      seasonalForecast,
+      currentBalance: totalBalance,
+    });
+
+    await RuleEngine.processRules(
+      supabase,
+      user.userId,
+      { type: "forecast" },
+      datasetId,
+    );
 
     return apiSuccess({
       spendingForecasts,
+      spendingPeriodSummaries,
       cashFlowForecast,
       seasonalForecast,
       cashFlowIssues,
+      saved: true,
       metadata: {
         forecastDays,
         currentBalance: totalBalance,
+        datasetId,
         patternsCount: patterns.length,
         dataPoints: transactions.length,
         generatedAt: new Date().toISOString(),

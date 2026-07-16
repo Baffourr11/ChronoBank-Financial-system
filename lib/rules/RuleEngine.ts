@@ -1,28 +1,120 @@
-// Path: lib/rules/RuleEngine.ts
-import { Rule, IRule, RuleCondition, RuleAction } from "../models/Rule";
-import { RuleExecution } from "../models/RuleExecution";
-// Note: Transaction, Account, Budget models removed - only core Rule functionality remains
-import { ConditionEvaluator, EvaluationContext } from "./ConditionEvaluator";
+import type { IRule, RuleAction, RuleCondition } from "../models/Rule";
+import {
+  ConditionEvaluator,
+  type EvaluationContext,
+} from "./ConditionEvaluator";
+import {
+  computeMonthlySpendByCategory,
+  getMonthStart,
+} from "@/lib/finance/budgetSpend";
 import { ActionExecutor } from "./ActionExecutor";
-import { connectToDatabase } from "../db";
+import { getSupabaseAdmin } from "../supabase/admin";
+import { toIRule } from "../mappers";
+import type { RuleRow } from "../supabase/types";
+
+export interface RuleRunResult {
+  ruleId: string;
+  fired: boolean;
+  conditionsMet: string[];
+  failedCondition?: string;
+  actionsExecuted: number;
+  status: "fired" | "skipped" | "failed";
+  error?: string;
+}
 
 export class RuleEngine {
-  static async processRules(userId: string, triggerData?: any): Promise<void> {
+  /** Run one rule and return whether it fired (for UI feedback). */
+  static async runSingleRule(
+    supabase: import("@supabase/supabase-js").SupabaseClient,
+    userId: string,
+    ruleId: string,
+    triggerData?: Record<string, unknown>,
+  ): Promise<RuleRunResult | null> {
+    const { data: row, error } = await supabase
+      .from("rules")
+      .select("*")
+      .eq("id", ruleId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error || !row) return null;
+
+    const rule = toIRule(row as RuleRow);
+    if (!rule.isActive) {
+      return {
+        ruleId,
+        fired: false,
+        conditionsMet: [],
+        failedCondition: "Rule is inactive",
+        actionsExecuted: 0,
+        status: "skipped",
+      };
+    }
+
+    const datasetId = rule.datasetId ?? null;
+    const context = await this.buildEvaluationContext(
+      supabase,
+      userId,
+      datasetId,
+      { ...triggerData, ruleId },
+    );
+
+    const ruleContext = {
+      ...context,
+      datasetId: rule.datasetId ?? context.datasetId,
+      ruleId: rule._id,
+    };
+
+    return this.processRuleWithResult(rule, ruleContext, triggerData);
+  }
+
+  static async processRules(
+    supabase: import("@supabase/supabase-js").SupabaseClient,
+    userId: string,
+    triggerData?: Record<string, unknown>,
+    datasetId?: string | null,
+  ): Promise<void> {
     try {
-      await connectToDatabase();
 
-      // Get all active rules for the user
-      const rules = await Rule.find({
+      let rulesQuery = supabase
+        .from("rules")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("is_active", true)
+        .order("priority", { ascending: true });
+
+      if (datasetId) {
+        rulesQuery = rulesQuery.eq("dataset_id", datasetId);
+      }
+
+      const { data: rules, error } = await rulesQuery;
+      if (error) throw error;
+
+      const targetRuleId =
+        typeof triggerData?.ruleId === "string" ? triggerData.ruleId : null;
+
+      const rows = ((rules ?? []) as RuleRow[]).filter(
+        (row) => !targetRuleId || row.id === targetRuleId,
+      );
+
+      const resolvedDatasetId =
+        datasetId ?? (rows[0] as RuleRow | undefined)?.dataset_id ?? null;
+
+      const context = await this.buildEvaluationContext(
+        supabase,
         userId,
-        isActive: true,
-      }).sort({ priority: 1 });
+        resolvedDatasetId,
+        triggerData,
+      );
 
-      // Get current context data
-      const context = await this.buildEvaluationContext(userId, triggerData);
-
-      // Process each rule
-      for (const rule of rules) {
-        await this.processRule(rule, context, triggerData);
+      for (const row of rows) {
+        const rule = toIRule(row);
+        const ruleContext = {
+          ...context,
+          datasetId: rule.datasetId ?? context.datasetId,
+          ruleId: rule._id,
+        };
+        await this.processRuleWithResult(rule, ruleContext, triggerData);
       }
     } catch (error) {
       console.error("Error processing rules:", error);
@@ -31,20 +123,30 @@ export class RuleEngine {
 
   static async processScheduledRules(): Promise<void> {
     try {
-      await connectToDatabase();
-
+      const supabase = getSupabaseAdmin();
       const now = new Date();
-      const scheduledRules = await Rule.find({
-        isActive: true,
-        "schedule.type": { $in: ["once", "recurring"] },
-      });
 
-      for (const rule of scheduledRules) {
+      const { data: rules, error } = await supabase
+        .from("rules")
+        .select("*")
+        .eq("is_active", true);
+
+      if (error) throw error;
+
+      for (const row of (rules ?? []) as RuleRow[]) {
+        const rule = toIRule(row);
+        const scheduleType = rule.schedule?.type;
+        if (scheduleType !== "once" && scheduleType !== "recurring") {
+          continue;
+        }
+
         if (this.shouldExecuteScheduledRule(rule, now)) {
           const context = await this.buildEvaluationContext(
-            rule.userId.toString(),
+            supabase,
+            rule.userId,
+            rule.datasetId ?? null,
           );
-          await this.processRule(rule, context, {
+          await this.processRuleWithResult(rule, context, {
             type: "scheduled",
             time: now,
           });
@@ -55,87 +157,232 @@ export class RuleEngine {
     }
   }
 
-  private static async processRule(
+  private static async processRuleWithResult(
     rule: IRule,
     context: EvaluationContext,
-    triggerData?: any,
-  ): Promise<void> {
+    triggerData?: unknown,
+  ): Promise<RuleRunResult> {
     const startTime = Date.now();
     let executionStatus: "success" | "failed" | "partial" = "success";
     let errorMessage: string | undefined;
-    let actionsExecuted: any[] = [];
+    let actionsExecuted: unknown[] = [];
 
     try {
-      // Evaluate conditions
       const result = ConditionEvaluator.evaluateAllConditions(
         rule.conditions,
         context,
       );
 
       if (result.met) {
-        // Execute actions
         actionsExecuted = await ActionExecutor.executeActions(
           rule.actions,
-          rule.userId.toString(),
+          rule.userId,
           context,
         );
 
-        // Check if any actions failed
         const failedActions = actionsExecuted.filter(
-          (action) => action.status === "failed",
+          (action: { status?: string }) => action.status === "failed",
         );
         if (failedActions.length > 0) {
           executionStatus =
             failedActions.length === rule.actions.length ? "failed" : "partial";
+        } else {
+          executionStatus = "success";
         }
 
-        // Update rule execution count and last executed
-        rule.executionCount += 1;
-        rule.lastExecuted = new Date();
-        await rule.save();
+        await context.supabase
+          .from("rules")
+          .update({
+            execution_count: rule.executionCount + 1,
+            last_executed: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", rule._id!);
+
+        await this.logRuleExecution(context.supabase, {
+          userId: rule.userId,
+          ruleId: rule._id!,
+          triggeredBy:
+            (triggerData as { type?: string })?.type || "manual",
+          conditionsMet: result.metConditions,
+          actionsExecuted,
+          status: executionStatus,
+          error: errorMessage,
+          executionTime: Date.now() - startTime,
+        });
+
+        return {
+          ruleId: rule._id!,
+          fired: true,
+          conditionsMet: result.metConditions,
+          actionsExecuted: actionsExecuted.filter(
+            (a: { status?: string }) => a.status === "success",
+          ).length,
+          status: executionStatus === "failed" ? "failed" : "fired",
+          error: errorMessage,
+        };
       }
 
-      // Log execution
-      await this.logRuleExecution({
-        userId: rule.userId.toString(),
-        ruleId: rule._id.toString(),
-        triggeredBy: triggerData?.type || "manual",
-        conditionsMet: result.metConditions || [],
-        actionsExecuted,
-        status: executionStatus,
-        error: errorMessage,
+      await this.logRuleExecution(context.supabase, {
+        userId: rule.userId,
+        ruleId: rule._id!,
+        triggeredBy: (triggerData as { type?: string })?.type || "manual",
+        conditionsMet: result.metConditions,
+        actionsExecuted: [],
+        status: "skipped",
+        error: result.failedCondition,
         executionTime: Date.now() - startTime,
       });
+
+      return {
+        ruleId: rule._id!,
+        fired: false,
+        conditionsMet: result.metConditions,
+        failedCondition: result.failedCondition,
+        actionsExecuted: 0,
+        status: "skipped",
+      };
     } catch (error) {
-      executionStatus = "failed";
       errorMessage = error instanceof Error ? error.message : "Unknown error";
 
-      // Log execution even on error
-      await this.logRuleExecution({
-        userId: rule.userId.toString(),
-        ruleId: rule._id.toString(),
-        triggeredBy: triggerData?.type || "manual",
+      await this.logRuleExecution(context.supabase, {
+        userId: rule.userId,
+        ruleId: rule._id!,
+        triggeredBy: (triggerData as { type?: string })?.type || "manual",
         conditionsMet: [],
         actionsExecuted,
-        status: executionStatus,
+        status: "failed",
         error: errorMessage,
         executionTime: Date.now() - startTime,
       });
+
+      return {
+        ruleId: rule._id!,
+        fired: false,
+        conditionsMet: [],
+        actionsExecuted: 0,
+        status: "failed",
+        error: errorMessage,
+      };
     }
   }
 
   private static async buildEvaluationContext(
+    supabase: import("@supabase/supabase-js").SupabaseClient,
     userId: string,
-    triggerData?: any,
+    datasetId: string | null,
+    triggerData?: Record<string, unknown>,
   ): Promise<EvaluationContext> {
-    // Since we removed non-core models, provide minimal context
-    // Rules can still work with trigger data and basic date/time context
+    if (!datasetId) {
+      return {
+        supabase,
+        datasetId: undefined,
+        transactions: [],
+        accounts: [],
+        budgets: [],
+        predictions: {},
+        patterns: [],
+        currentDate: new Date(),
+        triggerData,
+        monthlySpendByCategory: {},
+      };
+    }
+
+    const monthStartIso = getMonthStart().toISOString();
+
+    const [
+      { data: accountRows },
+      { data: txRows },
+      { data: monthExpenseRows },
+      { data: budgetRows },
+      { data: predictionRows },
+      { data: patternRows },
+    ] = await Promise.all([
+      supabase
+        .from("accounts")
+        .select("id, name, balance, type, currency")
+        .eq("user_id", userId)
+        .eq("dataset_id", datasetId),
+      supabase
+        .from("transactions")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("dataset_id", datasetId)
+        .order("date", { ascending: false })
+        .limit(500),
+      supabase
+        .from("transactions")
+        .select("category, amount, type, date")
+        .eq("user_id", userId)
+        .eq("dataset_id", datasetId)
+        .eq("type", "expense")
+        .gte("date", monthStartIso),
+      supabase
+        .from("budgets")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("dataset_id", datasetId),
+      supabase
+        .from("predictions")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("dataset_id", datasetId)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("behavior_patterns")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("dataset_id", datasetId)
+        .order("confidence", { ascending: false })
+        .limit(20),
+    ]);
+
+    const predictions: EvaluationContext["predictions"] = {};
+    for (const row of predictionRows ?? []) {
+      if (predictions[row.prediction_type]) continue;
+      predictions[row.prediction_type] = {
+        predictionType: row.prediction_type,
+        predictedValue:
+          row.predicted_value != null ? Number(row.predicted_value) : null,
+        confidence: row.confidence != null ? Number(row.confidence) : null,
+        metadata: (row.metadata as Record<string, unknown>) ?? {},
+      };
+    }
+
+    const monthlySpendByCategory = computeMonthlySpendByCategory(
+      (monthExpenseRows ?? []).map((t) => ({
+        type: t.type,
+        category: t.category,
+        amount: Number(t.amount),
+        date: t.date,
+      })),
+    );
+
     return {
-      transactions: [], // Empty since Transaction model removed
-      accounts: [], // Empty since Account model removed
-      budgets: [], // Empty since Budget model removed
+      supabase,
+      datasetId,
+      transactions: (txRows ?? []).map((t) => ({
+        id: t.id,
+        type: t.type,
+        category: t.category,
+        amount: Number(t.amount),
+        description: t.description,
+        date: t.date,
+        status: t.status,
+      })),
+      accounts: (accountRows ?? []).map((a) => ({
+        id: a.id,
+        name: a.name,
+        balance: Number(a.balance),
+        type: a.type,
+        currency: a.currency,
+      })),
+      budgets: budgetRows ?? [],
+      predictions,
+      patterns: patternRows ?? [],
       currentDate: new Date(),
       triggerData,
+      monthlySpendByCategory,
     };
   }
 
@@ -143,10 +390,8 @@ export class RuleEngine {
     const { schedule, lastExecuted } = rule;
 
     if (schedule.type === "once") {
-      // For one-time rules, check if it hasn't been executed yet
       if (lastExecuted) return false;
 
-      // Check if scheduled time has passed
       if (schedule.time) {
         const [hours, minutes] = schedule.time.split(":").map(Number);
         const scheduledTime = new Date(now);
@@ -222,27 +467,35 @@ export class RuleEngine {
     return false;
   }
 
-  private static async logRuleExecution(executionData: {
+  private static async logRuleExecution(
+    supabase: import("@supabase/supabase-js").SupabaseClient,
+    executionData: {
     userId: string;
     ruleId: string;
     triggeredBy: string;
     conditionsMet: string[];
-    actionsExecuted: any[];
-    status: "success" | "failed" | "partial";
+    actionsExecuted: unknown[];
+    status: "success" | "failed" | "partial" | "skipped";
     error?: string;
     executionTime: number;
-  }): Promise<void> {
+  },
+  ): Promise<void> {
     try {
-      await RuleExecution.create({
-        ...executionData,
-        createdAt: new Date(),
+      await supabase.from("rule_executions").insert({
+        user_id: executionData.userId,
+        rule_id: executionData.ruleId,
+        triggered_by: executionData.triggeredBy,
+        conditions_met: executionData.conditionsMet,
+        actions_executed: executionData.actionsExecuted,
+        status: executionData.status,
+        error: executionData.error ?? null,
+        execution_time: executionData.executionTime,
       });
     } catch (error) {
       console.error("Error logging rule execution:", error);
     }
   }
 
-  // Utility methods for creating common rule templates
   static createTaxReserveRule(
     userId: string,
     taxPercentage: number,
@@ -272,10 +525,10 @@ export class RuleEngine {
         {
           type: "create_transaction" as const,
           params: {
-            accountId: null, // Will be set by user
+            accountId: null,
             type: "expense",
             category: "Taxes",
-            amount: 0, // Will be calculated dynamically
+            amount: 0,
             description: `Tax reserve (${taxPercentage}% of income)`,
           },
         },
@@ -355,9 +608,9 @@ export class RuleEngine {
         {
           type: "transfer" as const,
           params: {
-            fromAccountId: null, // Will be set by user
-            toAccountId: null, // Will be set by user
-            amount: 0, // Will be calculated dynamically
+            fromAccountId: null,
+            toAccountId: null,
+            amount: 0,
             description: `Automatic savings transfer (${savingsPercentage}%)`,
           },
         },
@@ -369,3 +622,6 @@ export class RuleEngine {
     };
   }
 }
+
+// Re-export types used by ActionExecutor
+export type { RuleCondition, RuleAction };

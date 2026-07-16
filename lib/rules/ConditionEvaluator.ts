@@ -1,13 +1,37 @@
 // Path: lib/rules/ConditionEvaluator.ts
 import { RuleCondition } from "../models/Rule";
-// Note: ITransaction, IAccount, IBudget models removed - only core Rule functionality remains
+import {
+  budgetPercentUsed,
+  spentForBudgetCategory,
+} from "@/lib/finance/budgetSpend";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+export interface PredictionSnapshot {
+  predictionType: string;
+  predictedValue: number | null;
+  confidence: number | null;
+  metadata: Record<string, unknown>;
+}
 
 export interface EvaluationContext {
-  transactions: any[]; // Empty array since Transaction model removed
-  accounts: any[]; // Empty array since Account model removed
-  budgets: any[]; // Empty array since Budget model removed
+  supabase: SupabaseClient;
+  datasetId?: string;
+  ruleId?: string;
+  transactions: Array<Record<string, unknown>>;
+  accounts: Array<{
+    id: string;
+    name: string;
+    balance: number;
+    type?: string;
+    currency?: string;
+  }>;
+  budgets: Array<Record<string, unknown>>;
+  predictions: Record<string, PredictionSnapshot>;
+  patterns: Array<Record<string, unknown>>;
   currentDate: Date;
-  triggerData?: any;
+  triggerData?: Record<string, unknown>;
+  /** Current-month spend by category (full month query, matches Budgets page) */
+  monthlySpendByCategory: Record<string, number>;
 }
 
 export class ConditionEvaluator {
@@ -28,6 +52,12 @@ export class ConditionEvaluator {
         return this.evaluateDateCondition(condition, context);
       case "account":
         return this.evaluateAccountCondition(condition, context);
+      case "predicted_balance":
+        return this.evaluatePredictedBalanceCondition(condition, context);
+      case "cash_flow_risk":
+        return this.evaluateCashFlowRiskCondition(condition, context);
+      case "budget":
+        return this.evaluateBudgetCondition(condition, context);
       default:
         return false;
     }
@@ -36,21 +66,53 @@ export class ConditionEvaluator {
   static evaluateAllConditions(
     conditions: RuleCondition[],
     context: EvaluationContext,
-  ): { met: boolean; metConditions: string[] } {
+  ): {
+    met: boolean;
+    metConditions: string[];
+    failedCondition?: string;
+  } {
+    if (!conditions.length) {
+      return {
+        met: false,
+        metConditions: [],
+        failedCondition: "No conditions defined",
+      };
+    }
+
     const metConditions: string[] = [];
 
     for (const condition of conditions) {
       const isMet = this.evaluateCondition(condition, context);
+      const label = this.describeCondition(condition, context);
       if (isMet) {
-        metConditions.push(
-          `${condition.type} ${condition.operator} ${condition.value}`,
-        );
+        metConditions.push(label);
       } else {
-        return { met: false, metConditions };
+        return { met: false, metConditions, failedCondition: label };
       }
     }
 
     return { met: true, metConditions };
+  }
+
+  private static describeCondition(
+    condition: RuleCondition,
+    context?: EvaluationContext,
+  ): string {
+    const field =
+      condition.field && String(condition.field) !== "*"
+        ? ` (${condition.field})`
+        : "";
+    const base = `${condition.type}${field} ${condition.operator} ${condition.value}`;
+    if (condition.type === "budget" && context?.triggerData?.lastBudgetCheck) {
+      const c = context.triggerData.lastBudgetCheck as {
+        category: string;
+        percentUsed: number;
+        spent: number;
+        limit: number;
+      };
+      return `${base} — ${c.category} is at ${c.percentUsed}% (GHS ${c.spent.toFixed(0)} of GHS ${c.limit.toFixed(0)} this month)`;
+    }
+    return base;
   }
 
   private static evaluateBalanceCondition(
@@ -75,69 +137,232 @@ export class ConditionEvaluator {
     condition: RuleCondition,
     context: EvaluationContext,
   ): boolean {
-    // Since transactions array is empty (model removed), evaluate based on trigger data if available
-    if (context.triggerData && context.triggerData.type === "transaction") {
-      const transaction = context.triggerData;
+    const pool: Array<Record<string, unknown>> = [...context.transactions];
+    if (context.triggerData?.transaction) {
+      pool.unshift(
+        context.triggerData.transaction as Record<string, unknown>,
+      );
+    }
 
-      if (condition.field === "amount") {
-        return this.evaluateArrayCondition(
-          [transaction.amount],
+    if (pool.length === 0) return false;
+
+    const latest = pool[0];
+
+    if (condition.field === "type") {
+      return this.evaluateStringCondition(
+        pool.map((t) => String(t.type)),
+        condition.operator,
+        condition.value,
+      );
+    }
+
+    if (condition.field === "amount") {
+      return pool.some((t) =>
+        this.compareValues(
+          Number(t.amount),
           condition.operator,
           condition.value,
           condition.secondaryValue,
-        );
-      }
-
-      if (condition.field === "category" || condition.field === "description") {
-        const value = transaction[condition.field];
-        return this.evaluateStringCondition(
-          [value],
-          condition.operator,
-          condition.value,
-        );
-      }
+        ),
+      );
     }
 
-    return false;
+    if (condition.field === "category" || condition.field === "description") {
+      return pool.some((t) =>
+        this.evaluateStringCondition(
+          [String(t[condition.field] ?? "")],
+          condition.operator,
+          condition.value,
+        ),
+      );
+    }
+
+    return this.compareValues(
+      latest[condition.field],
+      condition.operator,
+      condition.value,
+      condition.secondaryValue,
+    );
   }
 
   private static evaluateCategoryCondition(
     condition: RuleCondition,
     context: EvaluationContext,
   ): boolean {
-    // Since transactions array is empty (model removed), evaluate based on trigger data if available
-    if (
-      context.triggerData &&
-      context.triggerData.type === "transaction" &&
-      context.triggerData.category
-    ) {
-      const category = context.triggerData.category;
+    const tx = this.getTriggerTransaction(context);
+    if (tx?.category) {
       return this.evaluateStringCondition(
-        [category],
+        [String(tx.category)],
         condition.operator,
-        condition.value,
+        String(condition.value),
       );
     }
-
-    return false;
+    const categories = context.transactions
+      .filter((t) => t.type === "expense")
+      .map((t) => String(t.category ?? ""));
+    return this.evaluateStringCondition(
+      categories,
+      condition.operator,
+      String(condition.value),
+    );
   }
 
   private static evaluateAmountCondition(
     condition: RuleCondition,
     context: EvaluationContext,
   ): boolean {
-    // Since transactions array is empty (model removed), evaluate based on trigger data if available
-    if (
-      context.triggerData &&
-      context.triggerData.type === "transaction" &&
-      context.triggerData.amount
-    ) {
-      const amount = context.triggerData.amount;
-      return this.evaluateArrayCondition(
-        [amount],
+    const tx = this.getTriggerTransaction(context);
+    if (tx?.amount != null) {
+      return this.compareValues(
+        Number(tx.amount),
         condition.operator,
-        condition.value,
+        Number(condition.value),
+        condition.secondaryValue != null
+          ? Number(condition.secondaryValue)
+          : undefined,
       );
+    }
+    const amounts = context.transactions.map((t) => Number(t.amount ?? 0));
+    return this.evaluateArrayCondition(
+      amounts,
+      condition.operator,
+      Number(condition.value),
+      condition.secondaryValue != null
+        ? Number(condition.secondaryValue)
+        : undefined,
+    );
+  }
+
+  private static getTriggerTransaction(
+    context: EvaluationContext,
+  ): Record<string, unknown> | null {
+    const raw = context.triggerData?.transaction;
+    if (raw && typeof raw === "object") {
+      return raw as Record<string, unknown>;
+    }
+    return null;
+  }
+
+  private static evaluatePredictedBalanceCondition(
+    condition: RuleCondition,
+    context: EvaluationContext,
+  ): boolean {
+    const horizon = String(condition.field || "30d").replace("cash_flow_", "");
+    const typeKey =
+      horizon === "7" || horizon === "7d"
+        ? "cash_flow_7d"
+        : horizon === "90" || horizon === "90d"
+          ? "cash_flow_90d"
+          : "cash_flow_30d";
+
+    const pred = context.predictions[typeKey];
+    if (!pred) return false;
+
+    const meta = pred.metadata ?? {};
+    const balance =
+      Number(meta.lowestBalance ?? pred.predictedValue ?? 0) || 0;
+
+    return this.compareValues(
+      balance,
+      condition.operator,
+      Number(condition.value),
+      condition.secondaryValue != null
+        ? Number(condition.secondaryValue)
+        : undefined,
+    );
+  }
+
+  private static evaluateCashFlowRiskCondition(
+    condition: RuleCondition,
+    context: EvaluationContext,
+  ): boolean {
+    const pred = context.predictions["low_balance_risk"];
+    if (!pred) return false;
+
+    const issue = pred.metadata?.issue as
+      | { severity?: string }
+      | undefined;
+    const severity = issue?.severity ?? "medium";
+
+    if (condition.operator === "equals") {
+      return (
+        String(severity).toLowerCase() ===
+        String(condition.value).toLowerCase()
+      );
+    }
+    if (condition.operator === "contains") {
+      return String(severity)
+        .toLowerCase()
+        .includes(String(condition.value).toLowerCase());
+    }
+
+    const rank = { low: 1, medium: 2, high: 3 };
+    const actual = rank[severity as keyof typeof rank] ?? 0;
+    const expected = rank[String(condition.value) as keyof typeof rank] ?? 0;
+    return this.compareValues(actual, condition.operator, expected);
+  }
+
+  private static evaluateBudgetCondition(
+    condition: RuleCondition,
+    context: EvaluationContext,
+  ): boolean {
+    const field = String(condition.field || "").trim();
+    const threshold = Number(condition.value);
+    if (Number.isNaN(threshold)) return false;
+
+    const spentByCategory = context.monthlySpendByCategory ?? {};
+
+    const budgetsToCheck =
+      !field || field === "*" || field.toLowerCase() === "any"
+        ? context.budgets
+        : context.budgets.filter(
+            (b) =>
+              String(b.category).toLowerCase() === field.toLowerCase(),
+          );
+
+    if (budgetsToCheck.length === 0) return false;
+
+    for (const budget of budgetsToCheck) {
+      const category = String(budget.category);
+      const limit = Number(budget.limit_amount) || 0;
+      if (limit <= 0) continue;
+
+      const spent = spentForBudgetCategory(spentByCategory, category);
+      const percentUsed = budgetPercentUsed(spent, limit);
+      const matches = this.compareValues(
+        percentUsed,
+        condition.operator,
+        threshold,
+        condition.secondaryValue != null
+          ? Number(condition.secondaryValue)
+          : undefined,
+      );
+
+      if (matches) {
+        if (context.triggerData) {
+          context.triggerData.matchedBudgetCategory = category;
+          context.triggerData.matchedBudgetPercentUsed = percentUsed;
+          context.triggerData.matchedBudgetSpent = spent;
+          context.triggerData.matchedBudgetLimit = limit;
+        }
+        return true;
+      }
+
+      if (
+        context.triggerData &&
+        field &&
+        field !== "*" &&
+        field.toLowerCase() !== "any"
+      ) {
+        context.triggerData.lastBudgetCheck = {
+          category,
+          spent,
+          limit,
+          percentUsed,
+          threshold,
+          operator: condition.operator,
+        };
+      }
     }
 
     return false;
@@ -222,9 +447,13 @@ export class ConditionEvaluator {
       case "not_equals":
         return actual !== expected;
       case "greater_than":
-        return actual > expected;
+        return Number(actual) > Number(expected);
+      case "greater_than_or_equal":
+        return Number(actual) >= Number(expected);
       case "less_than":
-        return actual < expected;
+        return Number(actual) < Number(expected);
+      case "less_than_or_equal":
+        return Number(actual) <= Number(expected);
       case "contains":
         return String(actual)
           .toLowerCase()

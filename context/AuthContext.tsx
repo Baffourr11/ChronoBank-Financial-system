@@ -1,7 +1,8 @@
-// Path: context/AuthContext.tsx
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { parseApiJson } from "@/lib/api";
 
 export interface User {
   userId: string;
@@ -34,18 +35,14 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // Check if user is already logged in
-    refreshUser();
-  }, []);
+  const supabase = createClient();
 
   const refreshUser = async () => {
     try {
       const response = await fetch("/api/auth/me");
       if (response.ok) {
-        const data = await response.json();
-        setUser(data.data);
+        const data = await parseApiJson<{ data: User }>(response);
+        setUser(data?.data ?? null);
       } else {
         setUser(null);
       }
@@ -57,6 +54,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  useEffect(() => {
+    refreshUser();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      refreshUser();
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
   const login = async (email: string, password: string) => {
     setLoading(true);
     try {
@@ -67,12 +76,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Login failed");
+        const error = await parseApiJson<{ error?: string }>(response);
+        throw new Error(
+          error?.error ||
+            (response.status === 404
+              ? "Auth API unavailable. Restart with: npm run dev:fresh"
+              : "Login failed"),
+        );
       }
 
-      const data = await response.json();
-      setUser(data.data);
       await refreshUser();
     } finally {
       setLoading(false);
@@ -94,12 +106,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Registration failed");
+        const error = await parseApiJson<{ error?: string }>(response);
+        throw new Error(
+          error?.error ||
+            (response.status === 404
+              ? "Auth API unavailable. Restart with: npm run dev:fresh"
+              : "Registration failed"),
+        );
       }
 
-      const data = await response.json();
-      setUser(data.data);
       await refreshUser();
     } finally {
       setLoading(false);
@@ -110,6 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     try {
       await fetch("/api/auth/logout", { method: "POST" });
+      await supabase.auth.signOut();
       setUser(null);
     } finally {
       setLoading(false);

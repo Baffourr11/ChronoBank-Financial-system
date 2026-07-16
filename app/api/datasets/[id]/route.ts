@@ -1,51 +1,60 @@
-// Path: app/api/datasets/[id]/route.ts
 import { NextRequest } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { getAuthenticatedContext } from "@/lib/api/helpers";
 import { apiSuccess, apiError } from "@/lib/api";
-import { Dataset, Transaction } from "@/lib/models";
+import { repairDatasetAccounts } from "@/lib/data/repairDatasetAccounts";
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await getCurrentUser();
+    const { supabase, user } = await getAuthenticatedContext();
     if (!user) {
       return apiError("Unauthorized", 401);
     }
-
-    await connectToDatabase();
 
     const { id: datasetId } = await params;
     const body = await request.json();
     const { isActive } = body;
 
-    // Update dataset active status
-    const dataset = await Dataset.findOne({
-      _id: datasetId,
-      userId: user.userId,
-    });
-    if (!dataset) {
+    const { data: dataset, error: findError } = await supabase
+      .from("datasets")
+      .select("*")
+      .eq("id", datasetId)
+      .eq("user_id", user.userId)
+      .maybeSingle();
+
+    if (findError || !dataset) {
       return apiError("Dataset not found", 404);
     }
 
-    // Deactivate all other datasets if activating this one
     if (isActive) {
-      await Dataset.updateMany(
-        { userId: user.userId, _id: { $ne: datasetId } },
-        { isActive: false },
-      );
+      await supabase
+        .from("datasets")
+        .update({ is_active: false })
+        .eq("user_id", user.userId)
+        .neq("id", datasetId);
     }
 
-    // Update the selected dataset
-    dataset.isActive = isActive;
-    await dataset.save();
+    const { data: updated, error: updateError } = await supabase
+      .from("datasets")
+      .update({ is_active: isActive })
+      .eq("id", datasetId)
+      .select("*")
+      .single();
+
+    if (updateError || !updated) {
+      throw updateError;
+    }
+
+    if (isActive) {
+      await repairDatasetAccounts(supabase, user.userId, datasetId);
+    }
 
     return apiSuccess({
-      id: dataset._id.toString(),
-      name: dataset.name,
-      isActive: dataset.isActive,
+      id: updated.id,
+      name: updated.name,
+      isActive: updated.is_active,
       message: isActive
         ? "Dataset activated for analysis"
         : "Dataset deactivated",
@@ -57,31 +66,35 @@ export async function PUT(
 }
 
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await getCurrentUser();
+    const { supabase, user } = await getAuthenticatedContext();
     if (!user) {
       return apiError("Unauthorized", 401);
     }
 
-    await connectToDatabase();
-
     const { id: datasetId } = await params;
-    const dataset = await Dataset.findOne({
-      _id: datasetId,
-      userId: user.userId,
-    });
-    if (!dataset) {
+
+    const { data: dataset, error: findError } = await supabase
+      .from("datasets")
+      .select("id")
+      .eq("id", datasetId)
+      .eq("user_id", user.userId)
+      .maybeSingle();
+
+    if (findError || !dataset) {
       return apiError("Dataset not found", 404);
     }
 
-    // Delete associated transactions
-    await Transaction.deleteMany({ userId: user.userId, datasetId: datasetId });
+    await supabase
+      .from("transactions")
+      .delete()
+      .eq("user_id", user.userId)
+      .eq("dataset_id", datasetId);
 
-    // Delete the dataset
-    await Dataset.findByIdAndDelete(datasetId);
+    await supabase.from("datasets").delete().eq("id", datasetId);
 
     return apiSuccess({
       message: "Dataset and associated transactions deleted successfully",

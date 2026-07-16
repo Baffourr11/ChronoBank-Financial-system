@@ -18,22 +18,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { DatasetSelector } from "@/components/dataset/DatasetSelector";
 import { useDataset } from "@/lib/contexts/DatasetContext";
 import {
-  AlertTriangle,
-  Calendar,
   CheckCircle,
   Database,
   Edit,
@@ -45,6 +32,10 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import PageHeader from "@/components/layout/PageHeader";
+import RuleFormPanel, {
+  type RuleFormData,
+} from "@/components/rules/RuleFormPanel";
 
 interface Rule {
   id: string;
@@ -60,16 +51,6 @@ interface Rule {
   createdAt: string;
 }
 
-interface RuleFormData {
-  name: string;
-  description: string;
-  priority: number;
-  isActive: boolean;
-  conditions: any[];
-  actions: any[];
-  schedule: any;
-}
-
 export default function RulesPage() {
   const { selectedDataset } = useDataset();
   const [rules, setRules] = useState<Rule[]>([]);
@@ -77,6 +58,9 @@ export default function RulesPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
 
   const datasetId = selectedDataset?._id;
+  const [ruleTemplates, setRuleTemplates] = useState<
+    { id: string; name: string; description: string; category: string; rule: RuleFormData }[]
+  >([]);
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const [formData, setFormData] = useState<RuleFormData>({
     name: "",
@@ -87,6 +71,15 @@ export default function RulesPage() {
     actions: [],
     schedule: { type: "triggered" },
   });
+
+  useEffect(() => {
+    fetch("/api/rules/templates")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.data?.templates) setRuleTemplates(data.data.templates);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (datasetId) {
@@ -114,15 +107,49 @@ export default function RulesPage() {
     }
   };
 
+  const validateRuleForm = (): string | null => {
+    if (!formData.conditions.length) {
+      return "Add at least one condition.";
+    }
+    for (const c of formData.conditions) {
+      if (
+        c.type === "budget" &&
+        c.field &&
+        String(c.field) !== "*" &&
+        !String(c.field).trim()
+      ) {
+        return "Select a budget category for each budget condition.";
+      }
+    }
+    if (!formData.actions.length) {
+      return "Add at least one action.";
+    }
+    return null;
+  };
+
   const handleCreateRule = async () => {
+    const validationError = validateRuleForm();
+    if (validationError) {
+      window.alert(validationError);
+      return;
+    }
     try {
       const response = await fetch(`/api/rules?datasetId=${datasetId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...formData, datasetId }),
       });
 
+      const json = await response.json();
       if (response.ok) {
+        const run = json.data?.firstRun;
+        if (run && !run.fired) {
+          window.alert(
+            `Rule saved but did not fire yet: ${run.failedCondition || "conditions not met"}`,
+          );
+        } else if (run?.fired) {
+          window.alert("Rule saved and alert sent. Check the bell icon.");
+        }
         setIsCreateDialogOpen(false);
         fetchRules();
         resetForm();
@@ -135,6 +162,12 @@ export default function RulesPage() {
   const handleUpdateRule = async () => {
     if (!editingRule) return;
 
+    const validationError = validateRuleForm();
+    if (validationError) {
+      window.alert(validationError);
+      return;
+    }
+
     try {
       const response = await fetch(
         `/api/rules/${editingRule.id}?datasetId=${datasetId}`,
@@ -145,10 +178,21 @@ export default function RulesPage() {
         },
       );
 
+      const json = await response.json();
       if (response.ok) {
+        const run = json.data?.runResult;
+        if (run && !run.fired) {
+          window.alert(
+            `Rule updated but did not fire: ${run.failedCondition || "conditions not met"}`,
+          );
+        } else if (run?.fired) {
+          window.alert("Rule updated and alert sent. Check the bell icon.");
+        }
         setEditingRule(null);
         fetchRules();
         resetForm();
+      } else {
+        window.alert(json.error || "Failed to update rule");
       }
     } catch (error) {
       console.error("Failed to update rule:", error);
@@ -183,8 +227,24 @@ export default function RulesPage() {
         },
       );
 
+      const json = await response.json();
       if (response.ok) {
+        const data = json.data;
+        if (data?.fired) {
+          window.alert(
+            data.message ||
+              "Rule ran successfully. Check the bell icon for alerts.",
+          );
+        } else {
+          window.alert(
+            data?.message ||
+              data?.failedCondition ||
+              "Rule did not fire — conditions were not met.",
+          );
+        }
         fetchRules();
+      } else {
+        window.alert(json.error || "Failed to run rule");
       }
     } catch (error) {
       console.error("Failed to execute rule:", error);
@@ -201,77 +261,6 @@ export default function RulesPage() {
       actions: [],
       schedule: { type: "triggered" },
     });
-  };
-
-  const addCondition = () => {
-    setFormData((prev) => ({
-      ...prev,
-      conditions: [
-        ...prev.conditions,
-        {
-          type: "balance",
-          operator: "greater_than",
-          field: "",
-          value: "",
-        },
-      ],
-    }));
-  };
-
-  const addAction = () => {
-    setFormData((prev) => ({
-      ...prev,
-      actions: [
-        ...prev.actions,
-        {
-          type: "create_transaction",
-          params: {
-            type: "expense",
-            category: "",
-            amount: 0,
-            description: "",
-          },
-        },
-      ],
-    }));
-  };
-
-  const removeCondition = (index: number) => {
-    setFormData((prev) => ({
-      ...prev,
-      conditions: prev.conditions.filter((_, i) => i !== index),
-    }));
-  };
-
-  const removeAction = (index: number) => {
-    setFormData((prev) => ({
-      ...prev,
-      actions: prev.actions.filter((_, i) => i !== index),
-    }));
-  };
-
-  const updateCondition = (index: number, field: string, value: any) => {
-    setFormData((prev) => ({
-      ...prev,
-      conditions: prev.conditions.map((cond, i) =>
-        i === index ? { ...cond, [field]: value } : cond,
-      ),
-    }));
-  };
-
-  const updateAction = (index: number, field: string, value: any) => {
-    setFormData((prev) => ({
-      ...prev,
-      actions: prev.actions.map((action, i) =>
-        i === index
-          ? {
-              ...action,
-              [field]:
-                field === "params" ? { ...action.params, ...value } : value,
-            }
-          : action,
-      ),
-    }));
   };
 
   const getPriorityColor = (priority: number) => {
@@ -292,13 +281,7 @@ export default function RulesPage() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Financial Rules</h1>
-          <Button>
-            <Plus className="w-4 h-4 mr-2" />
-            Create Rule
-          </Button>
-        </div>
+        <h1 className="text-3xl font-bold">Financial Rules</h1>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {[...Array(6)].map((_, i) => (
             <Card key={i}>
@@ -341,17 +324,10 @@ export default function RulesPage() {
 
       {selectedDataset && (
         <>
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold">Financial Rules</h1>
-              <p className="text-muted-foreground">
-                Managing rules for: {selectedDataset.name}
-              </p>
-              <p className="text-muted-foreground">
-                Automate your financial decisions with customizable rules
-              </p>
-            </div>
+          <PageHeader
+            title="Financial Rules"
+            description={`Prediction-driven automation for ${selectedDataset.name}`}
+            actions={
             <Dialog
               open={isCreateDialogOpen || !!editingRule}
               onOpenChange={(open) => {
@@ -368,7 +344,7 @@ export default function RulesPage() {
                   Create Rule
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+              <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-2xl md:max-w-3xl lg:max-w-4xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>
                     {editingRule ? "Edit Rule" : "Create New Rule"}
@@ -378,256 +354,22 @@ export default function RulesPage() {
                     decisions
                   </DialogDescription>
                 </DialogHeader>
-
-                <div className="space-y-6">
-                  {/* Basic Info */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="name">Rule Name</Label>
-                      <Input
-                        id="name"
-                        value={formData.name}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            name: e.target.value,
-                          }))
-                        }
-                        placeholder="e.g., Tax Reserve Automation"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="priority">Priority</Label>
-                      <Select
-                        value={formData.priority.toString()}
-                        onValueChange={(value) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            priority: parseInt(value),
-                          }))
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1">1 (Low)</SelectItem>
-                          <SelectItem value="5">5 (Medium)</SelectItem>
-                          <SelectItem value="8">8 (High)</SelectItem>
-                          <SelectItem value="10">10 (Critical)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="description">Description</Label>
-                    <Textarea
-                      id="description"
-                      value={formData.description}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          description: e.target.value,
-                        }))
-                      }
-                      placeholder="Describe what this rule does..."
-                      rows={3}
-                    />
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      id="isActive"
-                      checked={formData.isActive}
-                      onCheckedChange={(checked) =>
-                        setFormData((prev) => ({ ...prev, isActive: checked }))
-                      }
-                    />
-                    <Label htmlFor="isActive">Rule is active</Label>
-                  </div>
-
-                  {/* Conditions */}
-                  <div>
-                    <div className="flex items-center justify-between mb-4">
-                      <Label>Conditions</Label>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={addCondition}
-                      >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Condition
-                      </Button>
-                    </div>
-                    <div className="space-y-3">
-                      {formData.conditions.map((condition, index) => (
-                        <div
-                          key={index}
-                          className="border rounded-lg p-4 space-y-3"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium">
-                              Condition {index + 1}
-                            </span>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeCondition(index)}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <Select
-                              value={condition.type}
-                              onValueChange={(value) =>
-                                updateCondition(index, "type", value)
-                              }
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="balance">
-                                  Account Balance
-                                </SelectItem>
-                                <SelectItem value="transaction">
-                                  Transaction
-                                </SelectItem>
-                                <SelectItem value="category">
-                                  Category
-                                </SelectItem>
-                                <SelectItem value="amount">Amount</SelectItem>
-                                <SelectItem value="date">Date</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <Select
-                              value={condition.operator}
-                              onValueChange={(value) =>
-                                updateCondition(index, "operator", value)
-                              }
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="equals">Equals</SelectItem>
-                                <SelectItem value="greater_than">
-                                  Greater Than
-                                </SelectItem>
-                                <SelectItem value="less_than">
-                                  Less Than
-                                </SelectItem>
-                                <SelectItem value="contains">
-                                  Contains
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <Input
-                              value={condition.value}
-                              onChange={(e) =>
-                                updateCondition(index, "value", e.target.value)
-                              }
-                              placeholder="Value"
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div>
-                    <div className="flex items-center justify-between mb-4">
-                      <Label>Actions</Label>
-                      <Button variant="outline" size="sm" onClick={addAction}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Action
-                      </Button>
-                    </div>
-                    <div className="space-y-3">
-                      {formData.actions.map((action, index) => (
-                        <div
-                          key={index}
-                          className="border rounded-lg p-4 space-y-3"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium">
-                              Action {index + 1}
-                            </span>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeAction(index)}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <Select
-                              value={action.type}
-                              onValueChange={(value) =>
-                                updateAction(index, "type", value)
-                              }
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="create_transaction">
-                                  Create Transaction
-                                </SelectItem>
-                                <SelectItem value="send_alert">
-                                  Send Alert
-                                </SelectItem>
-                                <SelectItem value="transfer">
-                                  Transfer Funds
-                                </SelectItem>
-                                <SelectItem value="update_account">
-                                  Update Account
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <Input
-                              value={action.params?.description || ""}
-                              onChange={(e) =>
-                                updateAction(index, "params", {
-                                  description: e.target.value,
-                                })
-                              }
-                              placeholder="Description"
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex justify-end space-x-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setIsCreateDialogOpen(false);
-                        setEditingRule(null);
-                        resetForm();
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={
-                        editingRule ? handleUpdateRule : handleCreateRule
-                      }
-                    >
-                      {editingRule ? "Update Rule" : "Create Rule"}
-                    </Button>
-                  </div>
-                </div>
+                <RuleFormPanel
+                  formData={formData}
+                  setFormData={setFormData}
+                  datasetId={datasetId}
+                  editing={!!editingRule}
+                  onCancel={() => {
+                    setIsCreateDialogOpen(false);
+                    setEditingRule(null);
+                    resetForm();
+                  }}
+                  onSubmit={editingRule ? handleUpdateRule : handleCreateRule}
+                />
               </DialogContent>
             </Dialog>
-          </div>
+            }
+          />
 
           {/* Rules Grid */}
           {rules.length === 0 ? (
@@ -648,17 +390,17 @@ export default function RulesPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {rules.map((rule) => (
-                <Card key={rule.id} className="relative">
+                <Card key={rule.id} className="relative min-w-0 overflow-hidden">
                   <CardHeader>
                     <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <CardTitle className="text-lg">{rule.name}</CardTitle>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2 min-w-0">
+                          <CardTitle className="text-lg truncate">{rule.name}</CardTitle>
                           <div
                             className={`w-2 h-2 rounded-full ${getPriorityColor(rule.priority)}`}
                           />
                         </div>
-                        <CardDescription className="text-sm">
+                        <CardDescription className="text-sm line-clamp-2">
                           {rule.description}
                         </CardDescription>
                       </div>
@@ -701,7 +443,7 @@ export default function RulesPage() {
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 mt-4 pt-4 border-t">
+                    <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t">
                       <Button
                         variant="outline"
                         size="sm"
@@ -745,136 +487,49 @@ export default function RulesPage() {
           )}
 
           {/* Quick Templates */}
-          <Card>
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Target className="w-5 h-5" />
+                <Target className="w-5 h-5 shrink-0" />
                 Quick Rule Templates
               </CardTitle>
               <CardDescription>
                 Pre-configured rules for common financial automation needs
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <Button
-                  variant="outline"
-                  className="h-20 flex-col"
-                  onClick={() => {
-                    setFormData({
-                      name: "Tax Reserve Automation",
-                      description:
-                        "Automatically reserve 15% for taxes when income exceeds GHS 1000",
-                      priority: 8,
-                      isActive: true,
-                      conditions: [
-                        {
-                          type: "transaction",
-                          operator: "greater_than",
-                          field: "amount",
-                          value: "1000",
-                        },
-                        {
-                          type: "transaction",
-                          operator: "equals",
-                          field: "type",
-                          value: "income",
-                        },
-                      ],
-                      actions: [
-                        {
-                          type: "create_transaction",
-                          params: {
-                            type: "expense",
-                            category: "Taxes",
-                            amount: 150,
-                            description: "Tax reserve (15%)",
-                          },
-                        },
-                      ],
-                      schedule: { type: "triggered" },
-                    });
-                    setIsCreateDialogOpen(true);
-                  }}
-                >
-                  <Calendar className="w-6 h-6 mb-2" />
-                  <span className="text-sm">Tax Reserve</span>
-                </Button>
-
-                <Button
-                  variant="outline"
-                  className="h-20 flex-col"
-                  onClick={() => {
-                    setFormData({
-                      name: "Low Balance Alert",
-                      description:
-                        "Alert when account balance falls below GHS 500",
-                      priority: 9,
-                      isActive: true,
-                      conditions: [
-                        {
-                          type: "balance",
-                          operator: "less_than",
-                          field: "Main Account",
-                          value: "500",
-                        },
-                      ],
-                      actions: [
-                        {
-                          type: "send_alert",
-                          params: {
-                            type: "low_balance",
-                            title: "Low Balance Warning",
-                            message: "Main Account balance below GHS 500",
-                            severity: "high",
-                          },
-                        },
-                      ],
-                      schedule: { type: "triggered" },
-                    });
-                    setIsCreateDialogOpen(true);
-                  }}
-                >
-                  <AlertTriangle className="w-6 h-6 mb-2" />
-                  <span className="text-sm">Balance Alert</span>
-                </Button>
-
-                <Button
-                  variant="outline"
-                  className="h-20 flex-col"
-                  onClick={() => {
-                    setFormData({
-                      name: "Automatic Savings",
-                      description: "Transfer 20% of income to savings account",
-                      priority: 7,
-                      isActive: true,
-                      conditions: [
-                        {
-                          type: "transaction",
-                          operator: "equals",
-                          field: "type",
-                          value: "income",
-                        },
-                      ],
-                      actions: [
-                        {
-                          type: "transfer",
-                          params: {
-                            fromAccountId: "",
-                            toAccountId: "",
-                            amount: 0,
-                            description: "Automatic savings (20%)",
-                          },
-                        },
-                      ],
-                      schedule: { type: "triggered" },
-                    });
-                    setIsCreateDialogOpen(true);
-                  }}
-                >
-                  <Target className="w-6 h-6 mb-2" />
-                  <span className="text-sm">Auto Savings</span>
-                </Button>
+            <CardContent className="min-w-0">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 min-w-0">
+                {ruleTemplates.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className="flex w-full min-w-0 flex-col items-start gap-2 rounded-lg border border-border bg-background p-4 text-left shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    onClick={() => {
+                      setFormData({
+                        name: t.rule.name,
+                        description: t.rule.description ?? "",
+                        priority: t.rule.priority ?? 5,
+                        isActive: t.rule.isActive ?? true,
+                        conditions: t.rule.conditions ?? [],
+                        actions: t.rule.actions ?? [],
+                        schedule: t.rule.schedule ?? { type: "triggered" },
+                      });
+                      setIsCreateDialogOpen(true);
+                    }}
+                  >
+                    <span className="w-full min-w-0 text-sm font-medium leading-snug line-clamp-2">
+                      {t.name}
+                    </span>
+                    <span className="w-full min-w-0 text-xs text-muted-foreground leading-relaxed line-clamp-3">
+                      {t.description}
+                    </span>
+                    {t.category === "ghana" && (
+                      <Badge variant="secondary" className="shrink-0 text-xs">
+                        Ghana SME
+                      </Badge>
+                    )}
+                  </button>
+                ))}
               </div>
             </CardContent>
           </Card>

@@ -1,30 +1,41 @@
-// Path: app/api/auth/me/route.ts
-import { NextRequest } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { createClient } from "@/lib/supabase/server";
 import { apiSuccess, apiError } from "@/lib/api";
-import { User } from "@/lib/models";
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    const user = await getCurrentUser();
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
     if (!user) {
       return apiError("Unauthorized", 401);
     }
 
-    await connectToDatabase();
+    const { data: profile, error } = await supabase
+      .from("users")
+      .select("id, email, full_name, preferences")
+      .eq("id", user.id)
+      .maybeSingle();
 
-    const userData = await User.findById(user.userId);
-
-    if (!userData) {
-      return apiError("User not found", 404);
+    if (error || !profile) {
+      return apiSuccess({
+        userId: user.id,
+        email: user.email,
+        fullName: user.user_metadata?.full_name ?? "User",
+        preferences: user.user_metadata?.preferences ?? {
+          currency: "USD",
+          timezone: "UTC",
+          theme: "light",
+        },
+      });
     }
 
     return apiSuccess({
-      userId: userData._id.toString(),
-      email: userData.email,
-      fullName: userData.fullName,
-      preferences: userData.preferences,
+      userId: profile.id,
+      email: profile.email,
+      fullName: profile.full_name,
+      preferences: profile.preferences,
     });
   } catch (error) {
     console.error("Get user error:", error);

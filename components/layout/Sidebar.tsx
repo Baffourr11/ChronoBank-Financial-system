@@ -2,29 +2,41 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
 import {
   LayoutDashboard,
-  Settings,
+  LogOut,
   Brain,
-  Target,
+  BookMarked,
+  PiggyBank,
   Database,
-  Shield,
+  Calendar,
 } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/rules", label: "Rules", icon: Target },
+  { href: "/rules", label: "Automation Rules", icon: BookMarked },
+  { href: "/budgets", label: "Smart Budget", icon: PiggyBank },
+  { href: "/timeline", label: "Timeline", icon: Calendar },
   { href: "/analytics/overview", label: "Analytics", icon: Brain },
-  { href: "/analytics/scenarios", label: "Scenarios", icon: Shield },
   { href: "/data/import", label: "Data Import", icon: Database },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ className = "" }: { className?: string }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { logout } = useAuth();
+
+  const handleSignOut = async () => {
+    await logout();
+    router.push("/login");
+  };
 
   return (
-    <aside className="w-64 bg-sidebar border-r border-sidebar-border flex flex-col">
+    <aside
+      className={`w-64 bg-sidebar border-r border-sidebar-border flex flex-col ${className}`}
+    >
       {/* Logo / Header */}
       <div className="p-6 border-b border-sidebar-border">
         <div className="flex items-center gap-3">
@@ -67,18 +79,15 @@ export default function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="p-4 border-t border-sidebar-border space-y-2">
-        <Link
-          href="/profile"
-          className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-sidebar-foreground hover:bg-sidebar-accent/20 ${
-            pathname === "/profile"
-              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : ""
-          }`}
+      <div className="p-4 border-t border-sidebar-border">
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className="flex w-full items-center gap-3 px-4 py-3 rounded-lg transition-colors text-sidebar-foreground hover:bg-destructive/10 hover:text-destructive"
         >
-          <Settings className="w-5 h-5" />
-          <span className="font-medium">Settings</span>
-        </Link>
+          <LogOut className="w-5 h-5" />
+          <span className="font-medium">Sign out</span>
+        </button>
       </div>
     </aside>
   );

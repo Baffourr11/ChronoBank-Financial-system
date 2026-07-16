@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -17,19 +18,20 @@ import { DatasetSelector } from "@/components/dataset/DatasetSelector";
 import { useDataset } from "@/lib/contexts/DatasetContext";
 import PredictiveCharts from "@/components/analytics/PredictiveCharts";
 import PatternHeatmap from "@/components/analytics/PatternHeatmap";
+import CategoryBreakdown from "@/components/analytics/CategoryBreakdown";
+import BalanceTrend from "@/components/dashboard/BalanceTrend";
+import PageHeader from "@/components/layout/PageHeader";
 import {
   Brain,
   TrendingUp,
   AlertTriangle,
-  Target,
   Activity,
-  Calendar,
-  Download,
   RefreshCw,
   BarChart3,
-  PieChart,
   Database,
+  Download,
 } from "lucide-react";
+import { downloadDatasetTransactionsCsv } from "@/lib/export/downloadTransactions";
 
 interface AnalyticsData {
   patterns: any;
@@ -47,6 +49,8 @@ export default function AnalyticsOverviewPage() {
 
   const datasetId = selectedDataset?._id;
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (datasetId) {
@@ -92,24 +96,37 @@ export default function AnalyticsOverviewPage() {
     }
   };
 
-  const handleExportData = async (format: "json" | "csv") => {
+  const handleExportCsv = async () => {
+    if (!datasetId) return;
+    setIsExporting(true);
+    setExportMessage(null);
     try {
-      const response = await fetch(
-        `/api/data/sample?format=${format}&months=12`,
+      const count = await downloadDatasetTransactionsCsv(
+        datasetId,
+        selectedDataset?.name,
       );
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `analytics-data.${format}`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      }
-    } catch (error) {
-      console.error("Failed to export data:", error);
+      setExportMessage(`Exported ${count} transactions.`);
+    } catch (err) {
+      setExportMessage(
+        err instanceof Error ? err.message : "Export failed",
+      );
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const runFullAnalysis = async () => {
+    if (!datasetId) return;
+    setIsLoading(true);
+    try {
+      await fetch("/api/intelligence/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ datasetId }),
+      });
+      await fetchAnalyticsData();
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -134,13 +151,7 @@ export default function AnalyticsOverviewPage() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Analytics Overview</h1>
-          <Button>
-            <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-            Loading...
-          </Button>
-        </div>
+        <h1 className="text-3xl font-bold">Analytics Overview</h1>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => (
             <Card key={i}>
@@ -184,27 +195,36 @@ export default function AnalyticsOverviewPage() {
         </Card>
       ) : (
         <>
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold">Analytics Overview</h1>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => handleExportData("csv")}>
-                <Download className="w-4 h-4 mr-2" />
-                Export CSV
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => handleExportData("json")}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Export JSON
-              </Button>
-              <Button onClick={fetchAnalyticsData}>
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Refresh
-              </Button>
-            </div>
-          </div>
+          <PageHeader
+            title="Analytics Overview"
+            description="Forecasts, patterns, and charts for your dataset"
+            actions={
+              <>
+                <Button onClick={runFullAnalysis} disabled={isLoading}>
+                  <Brain className="w-4 h-4 mr-2" />
+                  Run analysis
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleExportCsv}
+                  disabled={isExporting || isLoading}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  {isExporting ? "Exporting…" : "Export CSV"}
+                </Button>
+                <Button variant="outline" onClick={fetchAnalyticsData} disabled={isLoading}>
+                  <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+                  Refresh
+                </Button>
+              </>
+            }
+          />
+
+          {exportMessage && (
+            <Alert>
+              <AlertDescription>{exportMessage}</AlertDescription>
+            </Alert>
+          )}
 
           {/* Data Quality Alert */}
           {data && !data.patterns?.patterns.length && (
@@ -217,8 +237,8 @@ export default function AnalyticsOverviewPage() {
                     Currently have {data.metadata?.totalTransactions || 0}{" "}
                     transactions.
                   </span>
-                  <Button size="sm" variant="outline">
-                    Import Data
+                  <Button size="sm" variant="outline" asChild>
+                    <Link href="/data/import">Import data</Link>
                   </Button>
                 </div>
               </AlertDescription>
@@ -227,30 +247,30 @@ export default function AnalyticsOverviewPage() {
 
           {/* Key Metrics */}
           {data && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card className="min-w-0">
                 <CardContent className="p-6">
-                  <div className="flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4 text-chart-1" />
-                    <div>
-                      <p className="text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <BarChart3 className="w-4 h-4 text-chart-1 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm text-muted-foreground truncate">
                         Total Insights
                       </p>
-                      <p className="text-2xl font-bold">{getInsightCount()}</p>
+                      <p className="text-2xl font-bold tabular-nums truncate">{getInsightCount()}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="min-w-0">
                 <CardContent className="p-6">
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-chart-2" />
-                    <div>
-                      <p className="text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <TrendingUp className="w-4 h-4 text-chart-2 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm text-muted-foreground truncate">
                         Forecast Days
                       </p>
-                      <p className="text-2xl font-bold">
+                      <p className="text-2xl font-bold tabular-nums truncate">
                         {data.metadata?.forecastDays || 90}
                       </p>
                     </div>
@@ -258,15 +278,15 @@ export default function AnalyticsOverviewPage() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="min-w-0">
                 <CardContent className="p-6">
-                  <div className="flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-chart-3" />
-                    <div>
-                      <p className="text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Activity className="w-4 h-4 text-chart-3 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm text-muted-foreground truncate">
                         Data Points
                       </p>
-                      <p className="text-2xl font-bold">
+                      <p className="text-2xl font-bold tabular-nums truncate">
                         {data.metadata?.dataPoints || 0}
                       </p>
                     </div>
@@ -274,15 +294,15 @@ export default function AnalyticsOverviewPage() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="min-w-0">
                 <CardContent className="p-6">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-chart-4" />
-                    <div>
-                      <p className="text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <AlertTriangle className="w-4 h-4 text-chart-4 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm text-muted-foreground truncate">
                         Risk Level
                       </p>
-                      <p className="text-2xl font-bold capitalize">
+                      <p className="text-2xl font-bold capitalize tabular-nums truncate">
                         {getRiskLevel()}
                       </p>
                     </div>
@@ -296,17 +316,18 @@ export default function AnalyticsOverviewPage() {
           <Tabs
             value={activeTab}
             onValueChange={setActiveTab}
-            className="space-y-6"
+            className="space-y-6 min-w-0"
           >
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-2 sm:grid-cols-5 min-w-0">
               <TabsTrigger value="forecast">Forecast</TabsTrigger>
+              <TabsTrigger value="breakdown">Charts</TabsTrigger>
               <TabsTrigger value="patterns">Patterns</TabsTrigger>
               <TabsTrigger value="anomalies">Anomalies</TabsTrigger>
               <TabsTrigger value="insights">Insights</TabsTrigger>
             </TabsList>
 
             <TabsContent value="forecast" className="space-y-6">
-              {data?.forecast && (
+              {data?.forecast ? (
                 <>
                   <PredictiveCharts
                     forecasts={data.forecast.spendingForecasts || []}
@@ -337,7 +358,43 @@ export default function AnalyticsOverviewPage() {
                     </Alert>
                   )}
                 </>
+              ) : (
+                <Card>
+                  <CardContent className="py-12 text-center text-sm text-muted-foreground">
+                    No forecast yet. Click <strong>Run analysis</strong> above.
+                  </CardContent>
+                </Card>
               )}
+            </TabsContent>
+
+            <TabsContent value="breakdown" className="space-y-10 min-w-0">
+              <section className="space-y-4 min-w-0">
+                <div className="flex items-start gap-3 pb-1">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                    <TrendingUp className="h-5 w-5 text-primary" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-lg font-semibold tracking-tight">
+                      Balance trend
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      Historical balance with 90-day forecast
+                    </p>
+                  </div>
+                </div>
+                <BalanceTrend datasetId={datasetId} />
+              </section>
+
+              <div
+                className="border-t border-border/60"
+                aria-hidden
+              />
+
+              <CategoryBreakdown
+                datasetId={datasetId}
+                isLoading={isLoading}
+                colorMode="vibrant"
+              />
             </TabsContent>
 
             <TabsContent value="patterns" className="space-y-6">
@@ -553,38 +610,6 @@ export default function AnalyticsOverviewPage() {
             </TabsContent>
           </Tabs>
 
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Target className="w-5 h-5" />
-                Quick Actions
-              </CardTitle>
-              <CardDescription>
-                Common analytics tasks and tools
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Button variant="outline" className="h-20 flex-col">
-                  <Brain className="w-6 h-6 mb-2" />
-                  <span className="text-sm">Run Analysis</span>
-                </Button>
-                <Button variant="outline" className="h-20 flex-col">
-                  <Calendar className="w-6 h-6 mb-2" />
-                  <span className="text-sm">View Forecast</span>
-                </Button>
-                <Button variant="outline" className="h-20 flex-col">
-                  <PieChart className="w-6 h-6 mb-2" />
-                  <span className="text-sm">Pattern Analysis</span>
-                </Button>
-                <Button variant="outline" className="h-20 flex-col">
-                  <Download className="w-6 h-6 mb-2" />
-                  <span className="text-sm">Export Data</span>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
         </>
       )}
     </div>

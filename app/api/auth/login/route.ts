@@ -1,10 +1,7 @@
-// Path: app/api/auth/login/route.ts
 import { NextRequest } from "next/server";
-import bcrypt from "bcryptjs";
-import { connectToDatabase } from "@/lib/db";
-import { generateToken, setAuthCookie } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { apiSuccess, apiError } from "@/lib/api";
-import { User } from "@/lib/models";
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,26 +12,41 @@ export async function POST(request: NextRequest) {
       return apiError("Email and password are required", 400);
     }
 
-    await connectToDatabase();
+    const supabase = await createClient();
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.toLowerCase().trim(),
+      password,
+    });
 
-    const user = await User.findOne({ email });
-    if (!user) {
+    if (error || !data.user) {
       return apiError("Invalid email or password", 401);
     }
 
-    const passwordMatch = await bcrypt.compare(password, user.passwordHash);
-    if (!passwordMatch) {
-      return apiError("Invalid email or password", 401);
-    }
+    let { data: profile } = await supabase
+      .from("users")
+      .select("full_name")
+      .eq("id", data.user.id)
+      .maybeSingle();
 
-    const userId = user._id.toString();
-    const token = generateToken(userId, email);
-    await setAuthCookie(token);
+    if (!profile) {
+      const admin = getSupabaseAdmin();
+      const fullName =
+        (data.user.user_metadata?.full_name as string) ||
+        data.user.email?.split("@")[0] ||
+        "User";
+      await admin.from("users").upsert({
+        id: data.user.id,
+        email: data.user.email ?? "",
+        full_name: fullName,
+        preferences: { currency: "USD", timezone: "UTC", theme: "light" },
+      });
+      profile = { full_name: fullName };
+    }
 
     return apiSuccess({
-      userId,
-      email,
-      fullName: user.fullName,
+      userId: data.user.id,
+      email: data.user.email,
+      fullName: profile?.full_name ?? data.user.user_metadata?.full_name,
       message: "Login successful",
     });
   } catch (error) {

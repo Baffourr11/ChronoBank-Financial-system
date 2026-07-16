@@ -1,10 +1,7 @@
-// Path: app/(dashboard)/dashboard/page.tsx
+// Path: app/(dashboard)/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAuth } from "@/context/AuthContext";
-import { useDataset } from "@/lib/contexts/DatasetContext";
-import { DatasetSelector } from "@/components/dataset/DatasetSelector";
 import {
   Card,
   CardContent,
@@ -12,66 +9,269 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import BalanceTrend from "@/components/dashboard/BalanceTrend";
-import { Brain, Target, Shield, Database, TrendingUp } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import Link from "next/link";
+import { DatasetSelector } from "@/components/dataset/DatasetSelector";
+import { useDataset } from "@/lib/contexts/DatasetContext";
+import CategoryBreakdown from "@/components/analytics/CategoryBreakdown";
+import DashboardGreeting from "@/components/dashboard/DashboardGreeting";
+import RecentTransactions from "@/components/dashboard/RecentTransactions";
+import SmartInsights from "@/components/dashboard/SmartInsights";
+import HealthScoreCard from "@/components/dashboard/HealthScoreCard";
+import AutomationPanel from "@/components/dashboard/AutomationPanel";
+import AutomationStatusCard from "@/components/dashboard/AutomationStatusCard";
+import RecommendationsList from "@/components/dashboard/RecommendationsList";
+import FinancialWalletCard from "@/components/dashboard/FinancialWalletCard";
+import PageHeader from "@/components/layout/PageHeader";
+import {
+  TrendingUp,
+  AlertTriangle,
+  Target,
+  Upload,
+  Activity,
+  Database,
+  BarChart3,
+  ChevronRight,
+} from "lucide-react";
+import {
+  normalizeImportStats,
+  type ImportDataQuality,
+} from "@/lib/data/importStats";
 
-export default function DashboardPage() {
-  const { user } = useAuth();
+interface DashboardStats {
+  totalBalance: number;
+  monthlyIncome: number;
+  monthlyExpenses: number;
+  transactionCount: number;
+  accountsCount: number;
+  activeRules: number;
+  dataQuality: ImportDataQuality;
+}
+
+export default function Dashboard() {
   const { selectedDataset } = useDataset();
-  const [analyticsData, setAnalyticsData] = useState<{
-    patterns: any;
-    forecast: any;
-    scenarios: null;
-    rules: any;
-  }>({
-    patterns: null,
-    forecast: null,
-    scenarios: null,
-    rules: null,
-  });
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [patterns, setPatterns] = useState<any>(null);
+  const [forecast, setForecast] = useState<any>(null);
+  const [intelligence, setIntelligence] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRunningPipeline, setIsRunningPipeline] = useState(false);
+  const [walletRefreshKey, setWalletRefreshKey] = useState(0);
 
+  // Add dataset ID to all API calls
   const datasetId = selectedDataset?._id;
 
   useEffect(() => {
     if (!datasetId) {
+      setStats(null);
+      setIntelligence(null);
       setIsLoading(false);
       return;
     }
 
-    const fetchAnalyticsData = async () => {
+    const controller = new AbortController();
+    setIsLoading(true);
+    setStats(null);
+    setIntelligence(null);
+
+    const fetchDashboardData = async () => {
       try {
-        // Fetch core analytics data with dataset ID
-        const [patternsRes, forecastRes, rulesRes] = await Promise.all([
-          fetch(`/api/analytics/patterns?datasetId=${datasetId}`),
-          fetch(`/api/analytics/forecast?datasetId=${datasetId}`),
-          fetch(`/api/rules?datasetId=${datasetId}`),
+        const [
+          accountsResponse,
+          transactionsResponse,
+          rulesResponse,
+          importStatsResponse,
+          intelligenceResponse,
+        ] = await Promise.all([
+          fetch(`/api/accounts?datasetId=${datasetId}`, {
+            signal: controller.signal,
+          }),
+          fetch(`/api/transactions?limit=100&datasetId=${datasetId}`, {
+            signal: controller.signal,
+          }),
+          fetch(`/api/rules?datasetId=${datasetId}`, {
+            signal: controller.signal,
+          }),
+          fetch(`/api/data/import?datasetId=${datasetId}`, {
+            signal: controller.signal,
+          }),
+          fetch(`/api/intelligence/summary?datasetId=${datasetId}`, {
+            signal: controller.signal,
+          }),
         ]);
 
-        const data = {
-          patterns: patternsRes.ok ? await patternsRes.json() : null,
-          forecast: forecastRes.ok ? await forecastRes.json() : null,
-          scenarios: null, // Will be loaded when user visits scenarios page
-          rules: rulesRes.ok ? await rulesRes.json() : null,
-        };
+        if (controller.signal.aborted) return;
 
-        setAnalyticsData(data);
+        if (
+          accountsResponse.ok &&
+          transactionsResponse.ok &&
+          rulesResponse.ok &&
+          importStatsResponse.ok
+        ) {
+          const accountsData = await accountsResponse.json();
+          const transactionsData = await transactionsResponse.json();
+          const rulesData = await rulesResponse.json();
+          const importStats = await importStatsResponse.json();
+          const dataQuality = normalizeImportStats(importStats.data);
+
+          const accounts = accountsData.data?.accounts ?? [];
+          const transactions = transactionsData.data?.transactions || [];
+          const rules = Array.isArray(rulesData.data) ? rulesData.data : [];
+
+          const totalBalance = accounts.reduce(
+            (sum: number, acc: { balance: number }) => sum + acc.balance,
+            0,
+          );
+          const currentMonth = new Date().getMonth();
+          const currentYear = new Date().getFullYear();
+
+          const monthlyTransactions = transactions.filter(
+            (tx: { date: string }) => {
+              const txDate = new Date(tx.date);
+              return (
+                txDate.getMonth() === currentMonth &&
+                txDate.getFullYear() === currentYear
+              );
+            },
+          );
+
+          const monthlyIncome = monthlyTransactions
+            .filter((tx: { type: string }) => tx.type === "income")
+            .reduce(
+              (sum: number, tx: { amount: number }) => sum + tx.amount,
+              0,
+            );
+
+          const monthlyExpenses = monthlyTransactions
+            .filter((tx: { type: string }) => tx.type === "expense")
+            .reduce(
+              (sum: number, tx: { amount: number }) => sum + tx.amount,
+              0,
+            );
+
+          if (controller.signal.aborted) return;
+
+          setStats({
+            totalBalance,
+            monthlyIncome,
+            monthlyExpenses,
+            transactionCount: transactions.length,
+            accountsCount: accounts.length,
+            activeRules: rules.filter(
+              (rule: { isActive: boolean }) => rule.isActive,
+            ).length,
+            dataQuality,
+          });
+        }
+
+        if (intelligenceResponse.ok && !controller.signal.aborted) {
+          const intelligenceData = await intelligenceResponse.json();
+          setIntelligence(intelligenceData.data);
+        }
       } catch (error) {
-        console.error("Failed to fetch analytics data:", error);
+        if ((error as Error).name === "AbortError") return;
+        console.error("Failed to fetch dashboard data:", error);
       } finally {
-        setIsLoading(false);
+        if (!controller.signal.aborted) setIsLoading(false);
       }
     };
 
-    fetchAnalyticsData();
+    fetchDashboardData();
+    return () => controller.abort();
   }, [datasetId]);
 
+  const handleDataImport = () => {
+    // Navigate to data import page or open import modal
+    window.location.href = "/data/import";
+  };
+
+  const handleRunAnalysis = async () => {
+    if (!datasetId) return;
+    setIsRunningPipeline(true);
+    try {
+      await fetch("/api/intelligence/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ datasetId }),
+      });
+      const summaryRes = await fetch(
+        `/api/intelligence/summary?datasetId=${datasetId}`,
+      );
+      if (summaryRes.ok) setIntelligence((await summaryRes.json()).data);
+      setWalletRefreshKey((k) => k + 1);
+    } catch (error) {
+      console.error("Failed to run analysis:", error);
+    } finally {
+      setIsRunningPipeline(false);
+    }
+  };
+
+  const handleDismissRecommendation = async (id: string) => {
+    try {
+      await fetch(`/api/recommendations/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "dismissed" }),
+      });
+      setIntelligence((prev: any) =>
+        prev
+          ? {
+              ...prev,
+              recommendations: prev.recommendations.filter(
+                (r: { id: string }) => r.id !== id,
+              ),
+            }
+          : prev,
+      );
+    } catch (error) {
+      console.error("Failed to dismiss recommendation:", error);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-6">
+                <div className="h-4 bg-muted rounded w-3/4 mb-2 animate-pulse" />
+                <div className="h-8 bg-muted rounded w-1/2 animate-pulse" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader>
+              <div className="h-6 bg-muted rounded w-1/3 animate-pulse" />
+              <div className="h-4 bg-muted rounded w-1/2 animate-pulse" />
+            </CardHeader>
+            <CardContent>
+              <div className="h-80 bg-muted rounded animate-pulse" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <div className="h-6 bg-muted rounded w-1/3 animate-pulse" />
+              <div className="h-4 bg-muted rounded w-1/2 animate-pulse" />
+            </CardHeader>
+            <CardContent>
+              <div className="h-80 bg-muted rounded animate-pulse" />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-8 space-y-8">
-      {/* Dataset Selector */}
-      <DatasetSelector />
+    <div className="space-y-6">
+      {!selectedDataset && (
+        <DatasetSelector />
+      )}
 
       {/* Show message if no dataset selected */}
       {!selectedDataset && (
@@ -79,14 +279,15 @@ export default function DashboardPage() {
           <CardContent className="p-8 text-center">
             <Database className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
             <h3 className="text-lg font-semibold mb-2">
-              Select a Dataset to View Dashboard
+              Select a Dataset to Begin
             </h3>
             <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
-              Your dashboard analytics are computed for specific datasets.
-              Select a dataset above or upload a new one to get started.
+              Choose a dataset from above to view analytics, patterns, and
+              insights specific to that dataset. You can upload multiple
+              datasets for different accounts or time periods.
             </p>
             <Button asChild>
-              <Link href="/data/import">Upload New Dataset</Link>
+              <a href="/data/import">Upload New Dataset</a>
             </Button>
           </CardContent>
         </Card>
@@ -94,208 +295,187 @@ export default function DashboardPage() {
 
       {selectedDataset && (
         <>
-          {/* Header */}
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">
-              Welcome back, {user?.fullName}
-            </h1>
-            <p className="text-muted-foreground mt-2">
-              Analyzing: {selectedDataset.name}
-            </p>
+          <DashboardGreeting />
+          <DatasetSelector variant="compact" />
+          <PageHeader
+            title="Dashboard"
+            description="What happened, what's next, and what to do"
+            actions={
+              <Button variant="outline" onClick={handleDataImport}>
+                <Upload className="w-4 h-4 mr-2" />
+                Import Data
+              </Button>
+            }
+          />
+
+          {/* Data Quality Alert */}
+          {stats && !stats.dataQuality.hasEnoughData && (
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                <div className="flex items-center justify-between">
+                  <span>
+                    Need more transaction data for accurate AI analysis.
+                    Currently have{" "}
+                    {stats.dataQuality.totalTransactions ??
+                      stats.transactionCount}{" "}
+                    transactions, need
+                    at least{" "}
+                    {
+                      stats.dataQuality.recommendations
+                        .recommendedMinTransactions
+                    }{" "}
+                    transactions.
+                  </span>
+                  <Button size="sm" onClick={handleDataImport}>
+                    Import Historical Data
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <FinancialWalletCard
+            key={walletRefreshKey}
+            datasetId={datasetId}
+            onRunAnalysis={handleRunAnalysis}
+            isRunningAnalysis={isRunningPipeline}
+          />
+
+          {/* Intelligence row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <HealthScoreCard
+              score={intelligence?.healthScore?.score ?? 0}
+              label={intelligence?.healthScore?.label ?? "—"}
+              loading={!intelligence}
+            />
+            <AutomationPanel
+              activeRules={intelligence?.automation?.activeRules ?? stats?.activeRules ?? 0}
+              unreadAlerts={intelligence?.automation?.unreadAlerts ?? 0}
+              recentExecutions={intelligence?.automation?.recentExecutions ?? 0}
+              warningLevel={intelligence?.automationEnhancements?.warningLevel ?? null}
+              virtualReserve={intelligence?.automationEnhancements?.virtualReserve ?? null}
+              loading={!intelligence}
+            />
           </div>
 
-          {/* Core Features Overview */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-              <Link href="/analytics/overview">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-2">
-                    <Brain className="w-5 h-5 text-primary" />
-                    <CardTitle className="text-sm font-medium">
-                      Pattern Analysis
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-foreground">
-                    {isLoading
-                      ? "---"
-                      : analyticsData.patterns?.data?.patterns?.length || 0}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Spending patterns detected
-                  </p>
-                </CardContent>
-              </Link>
-            </Card>
+          <AutomationStatusCard
+            data={intelligence?.automationEnhancements ?? null}
+            loading={!intelligence}
+          />
 
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-              <Link href="/analytics/scenarios">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-2">
-                    <Shield className="w-5 h-5 text-primary" />
-                    <CardTitle className="text-sm font-medium">
-                      Scenario Testing
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-foreground">
-                    {isLoading ? "---" : "Active"}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Stress testing available
-                  </p>
-                </CardContent>
-              </Link>
-            </Card>
+          <RecommendationsList
+            items={(intelligence?.recommendations ?? []).map((r: any) => ({
+              id: r.id,
+              recommendation: r.recommendation,
+              priority: r.priority,
+              status: r.status,
+            }))}
+            loading={!intelligence}
+            onDismiss={handleDismissRecommendation}
+          />
 
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-              <Link href="/rules">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-2">
-                    <Target className="w-5 h-5 text-primary" />
-                    <CardTitle className="text-sm font-medium">
-                      Automation Rules
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-foreground">
-                    {isLoading ? "---" : analyticsData.rules?.data?.length || 0}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Active rules
-                  </p>
-                </CardContent>
-              </Link>
-            </Card>
-
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-              <Link href="/data/import">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-2">
-                    <Database className="w-5 h-5 text-primary" />
-                    <CardTitle className="text-sm font-medium">
-                      Data Import
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-foreground">
-                    Ready
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Import transaction data
-                  </p>
-                </CardContent>
-              </Link>
-            </Card>
-          </div>
-
-          {/* Analytics Preview */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5" />
-                  Balance Trend Analysis
-                </CardTitle>
-                <CardDescription>
-                  AI-powered financial trend analysis
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <BalanceTrend />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Brain className="w-5 h-5" />
-                  90-Day Forecast
-                </CardTitle>
-                <CardDescription>
-                  ML-based financial predictions
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {isLoading ? (
-                  <div className="h-40 bg-muted rounded animate-pulse" />
-                ) : analyticsData.forecast?.data?.forecast ? (
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-medium">
-                        Predicted Cash Flow
-                      </span>
-                      <span className="text-lg font-bold text-primary">
-                        $
-                        {analyticsData.forecast.data.forecast.next_90_days?.predicted_cash_flow?.toFixed(
-                          2,
-                        ) || "0.00"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-medium">Confidence</span>
-                      <span className="text-lg font-bold text-chart-1">
-                        {analyticsData.forecast.data.forecast.next_90_days
-                          ?.confidence
-                          ? `${(analyticsData.forecast.data.forecast.next_90_days.confidence * 100).toFixed(0)}%`
-                          : "---"}
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Based on historical spending patterns and seasonal trends
+          {/* Key Metrics */}
+          {stats && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              <Card className="min-w-0">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <TrendingUp className="w-4 h-4 text-chart-2 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm text-muted-foreground truncate">
+                        Monthly Income
+                      </p>
+                      <p className="text-2xl font-bold tabular-nums truncate">
+                        GHS {stats.monthlyIncome.toFixed(0)}
+                      </p>
                     </div>
                   </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <Brain className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
-                    <p className="text-muted-foreground">
-                      Import transaction data to see predictions
-                    </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+                </CardContent>
+              </Card>
 
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Quick Actions</CardTitle>
-              <CardDescription>Access core ChronoBank features</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Link href="/analytics/overview">
-                  <Button className="w-full gap-2">
-                    <Brain className="w-4 h-4" />
-                    View Analytics
+              <Card className="min-w-0">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Activity className="w-4 h-4 text-chart-4 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm text-muted-foreground truncate">
+                        Monthly Expenses
+                      </p>
+                      <p className="text-2xl font-bold tabular-nums truncate">
+                        GHS {stats.monthlyExpenses.toFixed(0)}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="min-w-0">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Target className="w-4 h-4 text-chart-3 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm text-muted-foreground truncate">
+                        Active Rules
+                      </p>
+                      <p className="text-2xl font-bold tabular-nums">{stats.activeRules}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          <section className="space-y-4">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Activity className="w-5 h-5" />
+              Now — what happened
+            </h2>
+            <RecentTransactions datasetId={datasetId} />
+            <CategoryBreakdown
+              datasetId={datasetId}
+              isLoading={isLoading}
+              colorMode="vibrant"
+            />
+          </section>
+
+          <section className="space-y-4">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <TrendingUp className="w-5 h-5" />
+              Intelligence
+            </h2>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <SmartInsights datasetId={datasetId} />
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Go deeper</CardTitle>
+                  <CardDescription>
+                    Forecasts and patterns live in Analytics
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-2">
+                  <Button variant="outline" className="justify-between h-auto py-3" asChild>
+                    <Link href="/analytics/overview">
+                      <span className="flex items-center gap-2">
+                        <BarChart3 className="w-4 h-4" />
+                        Analytics & forecasts
+                      </span>
+                      <ChevronRight className="w-4 h-4" />
+                    </Link>
                   </Button>
-                </Link>
-                <Link href="/analytics/scenarios">
-                  <Button variant="outline" className="w-full gap-2">
-                    <Shield className="w-4 h-4" />
-                    Run Scenarios
+                  <Button variant="outline" className="justify-between h-auto py-3" asChild>
+                    <Link href="/rules">
+                      <span className="flex items-center gap-2">
+                        <Target className="w-4 h-4" />
+                        Automation rules
+                      </span>
+                      <ChevronRight className="w-4 h-4" />
+                    </Link>
                   </Button>
-                </Link>
-                <Link href="/rules">
-                  <Button variant="outline" className="w-full gap-2">
-                    <Target className="w-4 h-4" />
-                    Manage Rules
-                  </Button>
-                </Link>
-                <Link href="/data/import">
-                  <Button variant="outline" className="w-full gap-2">
-                    <Database className="w-4 h-4" />
-                    Import Data
-                  </Button>
-                </Link>
-              </div>
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
+            </div>
+          </section>
         </>
       )}
     </div>

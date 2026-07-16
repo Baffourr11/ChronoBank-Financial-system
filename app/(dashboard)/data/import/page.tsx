@@ -13,7 +13,6 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import {
   AlertTriangle,
   CheckCircle,
@@ -25,6 +24,10 @@ import {
   Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useDataset } from "@/lib/contexts/DatasetContext";
+import { downloadDatasetTransactionsCsv } from "@/lib/export/downloadTransactions";
+import PageHeader from "@/components/layout/PageHeader";
+import { cn } from "@/lib/utils";
 
 interface Dataset {
   _id: string;
@@ -84,19 +87,15 @@ interface ImportStats {
 }
 
 export default function DataImportPage() {
+  const { refreshDatasets, selectDataset } = useDataset();
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importStats, setImportStats] = useState<ImportStats | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [activeDataset, setActiveDataset] = useState<Dataset | null>(null);
-  const [importOptions, setImportOptions] = useState({
-    skipDuplicates: true,
-    createMissingAccounts: true,
-    batchSize: 100,
-  });
-
   useEffect(() => {
     fetchDatasets();
     fetchImportStats();
@@ -161,9 +160,30 @@ export default function DataImportPage() {
 
       if (response.ok) {
         const result = await response.json();
-        setImportResult(result.data.importResult);
-        fetchDatasets(); // Refresh datasets
-        fetchImportStats(); // Refresh stats
+        const payload = result.data ?? result;
+        setImportResult({
+          ...payload.importResult,
+          dataset: payload.dataset,
+          message: `Imported ${payload.importResult.imported} transactions`,
+        });
+        const newId = payload.dataset?._id ?? payload.dataset?.id;
+        await refreshDatasets(newId);
+        fetchDatasets();
+        fetchImportStats();
+        if (payload.dataset) {
+          selectDataset({
+            _id: newId,
+            name: payload.dataset.name,
+            description: payload.dataset.description,
+            transactionCount: payload.dataset.transactionCount,
+            dateRange: payload.dataset.dateRange,
+            isActive: true,
+            metadata: payload.dataset.metadata ?? {
+              source: "upload",
+              format: "csv",
+            },
+          });
+        }
       } else {
         const error = await response.json();
         setImportResult({
@@ -200,7 +220,8 @@ export default function DataImportPage() {
       });
 
       if (response.ok) {
-        fetchDatasets(); // Refresh datasets
+        await refreshDatasets(datasetId);
+        fetchDatasets();
       }
     } catch (error) {
       console.error("Failed to activate dataset:", error);
@@ -270,8 +291,8 @@ export default function DataImportPage() {
 
       if (response.ok) {
         const result = await response.json();
-        // Format the result to match ImportResult interface
-        const importData = result.data;
+        const importData = result.data ?? result;
+        const newId = importData.dataset?._id ?? importData.dataset?.id;
         setImportResult({
           total: importData.dataRange?.totalTransactions || 0,
           imported: importData.created?.transactions || 0,
@@ -281,7 +302,7 @@ export default function DataImportPage() {
           message: importData.message || "Sample data generated successfully",
           dataset: importData.dataset
             ? {
-                _id: importData.dataset.id,
+                _id: newId,
                 name: importData.dataset.name,
                 description: "Generated sample data",
                 transactionCount: importData.dataset.transactionCount,
@@ -294,8 +315,28 @@ export default function DataImportPage() {
               }
             : undefined,
         });
-        fetchDatasets(); // Refresh datasets
-        fetchImportStats(); // Refresh stats
+        await refreshDatasets(newId);
+        fetchDatasets();
+        fetchImportStats();
+        if (importData.dataset && newId) {
+          selectDataset({
+            _id: newId,
+            name: importData.dataset.name,
+            description: "Generated sample data",
+            transactionCount: importData.dataset.transactionCount,
+            dateRange: importData.dataRange ?? {
+              start: importData.dataRange?.start ?? "",
+              end: importData.dataRange?.end ?? "",
+              totalDays: 0,
+            },
+            isActive: true,
+            metadata: {
+              source: "sample",
+              format: "json",
+              importedAt: new Date().toISOString(),
+            },
+          });
+        }
       } else {
         const error = await response.json();
         setImportResult({
@@ -328,19 +369,16 @@ export default function DataImportPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Data Management</h1>
-          <p className="text-muted-foreground">
-            Import, manage, and switch between multiple datasets for AI analysis
-          </p>
-        </div>
-        <Button onClick={fetchImportStats}>
-          <Database className="w-4 h-4 mr-2" />
-          Refresh Stats
-        </Button>
-      </div>
+      <PageHeader
+        title="Data Management"
+        description="Import, manage, and switch between multiple datasets for AI analysis"
+        actions={
+          <Button onClick={fetchImportStats}>
+            <Database className="w-4 h-4 mr-2" />
+            Refresh Stats
+          </Button>
+        }
+      />
 
       {/* Active Dataset */}
       {activeDataset && (
@@ -361,10 +399,118 @@ export default function DataImportPage() {
                 Source: {activeDataset.metadata.source} • Format:{" "}
                 {activeDataset.metadata.format.toUpperCase()}
               </div>
-              <Badge variant={activeDataset.isActive ? "default" : "secondary"}>
-                {activeDataset.isActive ? "Active" : "Inactive"}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isExporting}
+                  onClick={async () => {
+                    setIsExporting(true);
+                    try {
+                      await downloadDatasetTransactionsCsv(
+                        activeDataset._id,
+                        activeDataset.name,
+                      );
+                    } catch (err) {
+                      alert(
+                        err instanceof Error ? err.message : "Export failed",
+                      );
+                    } finally {
+                      setIsExporting(false);
+                    }
+                  }}
+                >
+                  <Download className="w-4 h-4 mr-1" />
+                  {isExporting ? "Exporting…" : "Export CSV"}
+                </Button>
+                <Badge variant={activeDataset.isActive ? "default" : "secondary"}>
+                  {activeDataset.isActive ? "Active" : "Inactive"}
+                </Badge>
+              </div>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Current Data Status */}
+      {importStats && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Database className="w-5 h-5" />
+              Current Data Status
+            </CardTitle>
+            <CardDescription>
+              Overview of your current transaction data across all datasets
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="min-w-0">
+                <p className="text-sm text-muted-foreground truncate">
+                  Total Transactions
+                </p>
+                <p className="text-2xl font-bold tabular-nums truncate">
+                  {importStats.statistics.totalTransactions}
+                </p>
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm text-muted-foreground">Data Range</p>
+                <p className="text-lg font-semibold">
+                  {importStats.statistics.dataRange.totalDays} days
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Data Quality</p>
+                <p
+                  className={`text-lg font-semibold ${getDataQualityColor(importStats.statistics.hasEnoughData)}`}
+                >
+                  {importStats.statistics.hasEnoughData ? "Good" : "Needs More"}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Historical Data</p>
+                <p
+                  className={`text-lg font-semibold ${getDataQualityColor(importStats.statistics.hasHistoricalData)}`}
+                >
+                  {importStats.statistics.hasHistoricalData
+                    ? "Available"
+                    : "Limited"}
+                </p>
+              </div>
+            </div>
+
+            {importStats.recommendations.needsMoreData && (
+              <Alert className="mt-4">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  <div className="space-y-2">
+                    <p>
+                      <strong>Recommendations:</strong>
+                    </p>
+                    <ul className="list-disc list-inside space-y-1 text-sm">
+                      {importStats.recommendations.needsMoreData && (
+                        <li>
+                          Need at least{" "}
+                          {
+                            importStats.recommendations
+                              .recommendedMinTransactions
+                          }{" "}
+                          transactions for accurate AI analysis
+                        </li>
+                      )}
+                      {importStats.recommendations.needsLongerHistory && (
+                        <li>
+                          Need at least{" "}
+                          {importStats.recommendations.recommendedMinDays} days
+                          of historical data
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
           </CardContent>
         </Card>
       )}
@@ -389,14 +535,40 @@ export default function DataImportPage() {
                 accept=".xlsx,.xls,.csv"
                 onChange={handleFileUpload}
                 disabled={isImporting}
-                className="cursor-pointer"
+                className="sr-only"
               />
-              {selectedFile && (
-                <div className="text-sm text-muted-foreground mt-2">
-                  Selected: {selectedFile.name} (
-                  {(selectedFile.size / 1024).toFixed(1)} KB)
-                </div>
-              )}
+              <label
+                htmlFor="file-upload"
+                className={cn(
+                  "flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-8 text-center transition-colors",
+                  isImporting
+                    ? "cursor-not-allowed opacity-50"
+                    : "cursor-pointer hover:border-primary hover:bg-primary/5 active:scale-[0.99]",
+                  selectedFile
+                    ? "border-primary bg-primary/5"
+                    : "border-muted-foreground/35 bg-muted/30",
+                )}
+              >
+                <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm">
+                  <Upload className="h-5 w-5" aria-hidden />
+                </span>
+                <span className="text-base font-semibold text-foreground">
+                  {selectedFile ? "Change file" : "Choose Excel or CSV file"}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  {selectedFile ? (
+                    <>
+                      <span className="font-medium text-foreground">
+                        {selectedFile.name}
+                      </span>
+                      {" · "}
+                      {(selectedFile.size / 1024).toFixed(1)} KB
+                    </>
+                  ) : (
+                    "Click to browse · supports .xlsx, .xls, .csv"
+                  )}
+                </span>
+              </label>
             </div>
 
             <Button
@@ -448,42 +620,6 @@ export default function DataImportPage() {
               </div>
             </div>
 
-            {/* Import Options */}
-            <div className="space-y-3">
-              <Label>Import Options</Label>
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id="skip-duplicates"
-                    checked={importOptions.skipDuplicates}
-                    onCheckedChange={(checked) =>
-                      setImportOptions((prev) => ({
-                        ...prev,
-                        skipDuplicates: checked,
-                      }))
-                    }
-                  />
-                  <Label htmlFor="skip-duplicates">
-                    Skip duplicate transactions
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id="create-accounts"
-                    checked={importOptions.createMissingAccounts}
-                    onCheckedChange={(checked) =>
-                      setImportOptions((prev) => ({
-                        ...prev,
-                        createMissingAccounts: checked,
-                      }))
-                    }
-                  />
-                  <Label htmlFor="create-accounts">
-                    Create missing accounts automatically
-                  </Label>
-                </div>
-              </div>
-            </div>
           </CardContent>
         </Card>
 
@@ -519,9 +655,9 @@ export default function DataImportPage() {
                     }`}
                     onClick={() => activateDataset(dataset._id)}
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h4 className="font-medium">{dataset.name}</h4>
+                    <div className="flex items-start justify-between gap-3 min-w-0">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-medium truncate">{dataset.name}</h4>
                         {dataset.description && (
                           <p className="text-sm text-muted-foreground mt-1">
                             {dataset.description}
@@ -570,7 +706,7 @@ export default function DataImportPage() {
       </div>
 
       {/* Template Downloads */}
-      <div className="w-full flex justify-center items-center xgrid-cols-1 xmd:grid-cols-2 gap-4">
+      <div className="w-full flex justify-center items-center grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -582,7 +718,7 @@ export default function DataImportPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex justify-center items-center xgrid-cols-1 xmd:grid-cols-2 gap-4">
+            <div className="flex justify-center items-center grid-cols-1 md:grid-cols-2 gap-4">
               <Button
                 onClick={() => downloadTemplate("csv")}
                 variant="outline"
@@ -689,89 +825,6 @@ export default function DataImportPage() {
                 </Alert>
               )}
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Current Data Status */}
-      {importStats && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Database className="w-5 h-5" />
-              Current Data Status
-            </CardTitle>
-            <CardDescription>
-              Overview of your current transaction data across all datasets
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  Total Transactions
-                </p>
-                <p className="text-2xl font-bold">
-                  {importStats.statistics.totalTransactions}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Data Range</p>
-                <p className="text-lg font-semibold">
-                  {importStats.statistics.dataRange.totalDays} days
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Data Quality</p>
-                <p
-                  className={`text-lg font-semibold ${getDataQualityColor(importStats.statistics.hasEnoughData)}`}
-                >
-                  {importStats.statistics.hasEnoughData ? "Good" : "Needs More"}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Historical Data</p>
-                <p
-                  className={`text-lg font-semibold ${getDataQualityColor(importStats.statistics.hasHistoricalData)}`}
-                >
-                  {importStats.statistics.hasHistoricalData
-                    ? "Available"
-                    : "Limited"}
-                </p>
-              </div>
-            </div>
-
-            {importStats.recommendations.needsMoreData && (
-              <Alert className="mt-4">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertDescription>
-                  <div className="space-y-2">
-                    <p>
-                      <strong>Recommendations:</strong>
-                    </p>
-                    <ul className="list-disc list-inside space-y-1 text-sm">
-                      {importStats.recommendations.needsMoreData && (
-                        <li>
-                          Need at least{" "}
-                          {
-                            importStats.recommendations
-                              .recommendedMinTransactions
-                          }{" "}
-                          transactions for accurate AI analysis
-                        </li>
-                      )}
-                      {importStats.recommendations.needsLongerHistory && (
-                        <li>
-                          Need at least{" "}
-                          {importStats.recommendations.recommendedMinDays} days
-                          of historical data
-                        </li>
-                      )}
-                    </ul>
-                  </div>
-                </AlertDescription>
-              </Alert>
-            )}
           </CardContent>
         </Card>
       )}

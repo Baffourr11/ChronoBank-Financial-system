@@ -30,11 +30,24 @@ import { useState } from "react";
 interface DatasetSelectorProps {
   onDatasetChange?: (dataset: Dataset) => void;
   showDetails?: boolean;
+  variant?: "card" | "compact";
+}
+
+function formatImportedDate(iso?: string): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(undefined, {
+    month: "numeric",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 export function DatasetSelector({
   onDatasetChange,
   showDetails = true,
+  variant = "card",
 }: DatasetSelectorProps) {
   const { selectedDataset, datasets, loading, selectDataset } = useDataset();
   const [open, setOpen] = useState(false);
@@ -131,13 +144,18 @@ export function DatasetSelector({
     );
   }
 
+  const importedLabel = formatImportedDate(
+    selectedDataset.metadata?.importedAt,
+  );
+  const isCompact = variant === "compact";
+
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Database className="w-5 h-5 text-primary" />
-            <CardTitle className="text-base">Analyzing Dataset</CardTitle>
+    <Card className={isCompact ? "min-w-0 overflow-hidden" : undefined}>
+      <CardHeader className={isCompact ? "pb-2 pt-4 px-4" : "pb-3"}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Database className="w-5 h-5 text-primary shrink-0" />
+            <CardTitle className="text-base truncate">Analyzing Dataset</CardTitle>
           </div>
           <DropdownMenu open={open} onOpenChange={setOpen}>
             <DropdownMenuTrigger asChild>
@@ -183,21 +201,27 @@ export function DatasetSelector({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <CardDescription>{selectedDataset.name}</CardDescription>
+        <CardDescription className="truncate">{selectedDataset.name}</CardDescription>
       </CardHeader>
       {showDetails && (
-        <CardContent className="pt-0">
-          <div className="flex items-center gap-4 text-sm">
+        <CardContent className={isCompact ? "pt-0 px-4 pb-4" : "pt-0"}>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm min-w-0">
+            {importedLabel && (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Upload className="w-4 h-4 text-muted-foreground" />
+                <span>{importedLabel}</span>
+              </div>
+            )}
             <div className="flex items-center gap-1.5">
-              <FileText className="w-4 h-4 text-muted-foreground" />
+              <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
               <span>{selectedDataset.transactionCount} transactions</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <Calendar className="w-4 h-4 text-muted-foreground" />
+              <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
               <span>{selectedDataset.dateRange.totalDays} days</span>
             </div>
             {selectedDataset.isActive && (
-              <Badge className="bg-green-100 text-green-800 text-xs">
+              <Badge className="bg-green-100 text-green-800 text-xs shrink-0">
                 Active
               </Badge>
             )}

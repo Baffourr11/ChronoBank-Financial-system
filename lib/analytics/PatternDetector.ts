@@ -77,7 +77,7 @@ export class PatternDetector {
 
       if (Math.abs(amountZScore) > 2.5) {
         anomalies.push({
-          transactionId: transaction._id.toString(),
+          transactionId: String(transaction._id ?? ""),
           type: 'amount',
           severity: Math.abs(amountZScore) > 3.5 ? 'high' : 'medium',
           description: `Unusual amount in ${transaction.category}`,
@@ -96,7 +96,7 @@ export class PatternDetector {
 
       if (recentTransactions.length > pattern.frequency * 2) {
         anomalies.push({
-          transactionId: transaction._id.toString(),
+          transactionId: String(transaction._id ?? ""),
           type: 'frequency',
           severity: 'medium',
           description: `Unusually high frequency in ${transaction.category}`,

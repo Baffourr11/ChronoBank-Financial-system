@@ -25,6 +25,20 @@ export function apiMessage(message: string, status = 200): NextResponse<ApiRespo
   );
 }
 
+export async function parseApiJson<T = { error?: string; data?: T }>(
+  response: Response,
+): Promise<T | null> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    return null;
+  }
+  try {
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchApi<T>(
   url: string,
   options?: RequestInit

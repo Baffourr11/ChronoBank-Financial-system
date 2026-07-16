@@ -26,7 +26,106 @@ export interface SeasonalForecast {
   confidence: number;
 }
 
+/** Daily points for spending forecast charts */
+export interface DailySpendingForecast {
+  date: string;
+  predicted: number;
+  minRange: number;
+  maxRange: number;
+  actual?: number;
+}
+
 export class Forecaster {
+  /**
+   * Daily spending series for live charts (predicted + confidence band).
+   * Includes recent historical actuals when available.
+   */
+  static generateDailySpendingForecast(
+    transactions: ITransaction[],
+    patterns: SpendingPattern[],
+    forecastDays = 90,
+    historyDays = 30,
+  ): DailySpendingForecast[] {
+    const expenseTransactions = transactions.filter((t) => t.type === "expense");
+    const expensePattern = this.analyzeExpensePattern(transactions);
+    const volatility = this.calculateVolatility(expenseTransactions);
+
+    const actualByDate = new Map<string, number>();
+    for (const t of expenseTransactions) {
+      const key = new Date(t.date).toISOString().split("T")[0];
+      actualByDate.set(key, (actualByDate.get(key) ?? 0) + t.amount);
+    }
+
+    const totalHistorical = expenseTransactions.reduce(
+      (sum, t) => sum + t.amount,
+      0,
+    );
+    const uniqueDays = new Set(
+      expenseTransactions.map((t) =>
+        new Date(t.date).toISOString().split("T")[0],
+      ),
+    ).size;
+    const avgDailySpend =
+      uniqueDays > 0
+        ? totalHistorical / uniqueDays
+        : expensePattern.averageExpenses;
+
+    const forecasts: DailySpendingForecast[] = [];
+    const currentDate = new Date();
+    currentDate.setHours(0, 0, 0, 0);
+
+    for (let i = -historyDays; i < forecastDays; i++) {
+      const forecastDate = new Date(currentDate);
+      forecastDate.setDate(currentDate.getDate() + i);
+      const dateStr = forecastDate.toISOString().split("T")[0];
+      const actual = actualByDate.get(dateStr);
+
+      if (i < 0) {
+        if (actual != null && actual > 0) {
+          forecasts.push({
+            date: dateStr,
+            predicted: actual,
+            minRange: actual,
+            maxRange: actual,
+            actual,
+          });
+        }
+        continue;
+      }
+
+      let predicted = this.predictDailyExpenses(
+        expensePattern,
+        forecastDate.getDay(),
+        forecastDate.getDate() - 1,
+        forecastDate.getMonth(),
+      );
+
+      for (const pattern of patterns) {
+        if (pattern.confidence > 0.7) {
+          predicted += (pattern.averageAmount * pattern.frequency) / 30;
+        }
+      }
+
+      if (predicted <= 0 && avgDailySpend > 0) {
+        predicted = avgDailySpend;
+      }
+
+      const vol = Math.max(volatility, 0.12);
+      const minRange = Math.max(0, predicted * (1 - vol));
+      const maxRange = predicted * (1 + vol);
+
+      forecasts.push({
+        date: dateStr,
+        predicted,
+        minRange,
+        maxRange,
+        ...(actual != null && actual > 0 ? { actual } : {}),
+      });
+    }
+
+    return forecasts;
+  }
+
   static generateSpendingForecast(
     transactions: ITransaction[],
     patterns: SpendingPattern[],

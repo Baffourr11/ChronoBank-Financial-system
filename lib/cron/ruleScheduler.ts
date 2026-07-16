@@ -1,49 +1,48 @@
-import { RuleEngine } from '../rules/RuleEngine';
-import { connectToDatabase } from '../db';
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { RuleEngine } from "../rules/RuleEngine";
 
-// This would be called by a cron job service (like Vercel Cron Jobs, node-cron, etc.)
 export async function processScheduledRules() {
   try {
-    console.log('Processing scheduled rules...');
-    await connectToDatabase();
-    
-    // Process all scheduled rules
+    console.log("Processing scheduled rules...");
     await RuleEngine.processScheduledRules();
-    
-    console.log('Scheduled rules processed successfully');
+    console.log("Scheduled rules processed successfully");
   } catch (error) {
-    console.error('Error processing scheduled rules:', error);
+    console.error("Error processing scheduled rules:", error);
   }
 }
 
-// Process rules triggered by transactions (called from transaction creation/update)
-export async function processTransactionRules(userId: string, transactionData: any) {
+export async function processTransactionRules(
+  userId: string,
+  datasetId: string,
+  transactionData: unknown,
+) {
   try {
-    await connectToDatabase();
-    
-    // Trigger rule processing for transaction events
-    await RuleEngine.processRules(userId, {
-      type: 'transaction',
-      transaction: transactionData
-    });
-    
+    const supabase = getSupabaseAdmin();
+    await RuleEngine.processRules(
+      supabase,
+      userId,
+      { type: "transaction", transaction: transactionData },
+      datasetId,
+    );
   } catch (error) {
-    console.error('Error processing transaction rules:', error);
+    console.error("Error processing transaction rules:", error);
   }
 }
 
-// Process rules triggered by account changes
-export async function processAccountRules(userId: string, accountData: any) {
+export async function processAccountRules(
+  userId: string,
+  datasetId: string,
+  accountData: unknown,
+) {
   try {
-    await connectToDatabase();
-    
-    // Trigger rule processing for account events
-    await RuleEngine.processRules(userId, {
-      type: 'account',
-      account: accountData
-    });
-    
+    const supabase = getSupabaseAdmin();
+    await RuleEngine.processRules(
+      supabase,
+      userId,
+      { type: "account", account: accountData },
+      datasetId,
+    );
   } catch (error) {
-    console.error('Error processing account rules:', error);
+    console.error("Error processing account rules:", error);
   }
 }

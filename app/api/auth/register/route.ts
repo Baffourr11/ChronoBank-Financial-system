@@ -1,17 +1,36 @@
-// Path: app/api/auth/register/route.ts
 import { NextRequest } from "next/server";
-import bcrypt from "bcryptjs";
-import { connectToDatabase } from "@/lib/db";
-import { generateToken, setAuthCookie } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { apiSuccess, apiError } from "@/lib/api";
-import { User } from "@/lib/models";
+
+async function ensureProfileRow(
+  userId: string,
+  email: string,
+  fullName: string,
+) {
+  const admin = getSupabaseAdmin();
+  const { error } = await admin.from("users").upsert(
+    {
+      id: userId,
+      email,
+      full_name: fullName,
+      preferences: { currency: "USD", timezone: "UTC", theme: "light" },
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "id" },
+  );
+
+  if (error) {
+    console.error("Profile upsert error:", error);
+    throw error;
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { email, fullName, password, confirmPassword } = body;
 
-    // Validation
     if (!email || !fullName || !password) {
       return apiError("Missing required fields", 400);
     }
@@ -29,42 +48,51 @@ export async function POST(request: NextRequest) {
       return apiError("Invalid email format", 400);
     }
 
-    await connectToDatabase();
+    const supabase = await createClient();
+    const normalizedEmail = email.toLowerCase().trim();
+    const trimmedName = fullName.trim();
 
-    // Check if email already exists
-    const existingUser = await User.findOne({ email });
-
-    if (existingUser) {
-      return apiError("Email already exists", 409);
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create user
-    const newUser = await User.create({
-      email,
-      fullName,
-      passwordHash: hashedPassword,
-      preferences: {
-        currency: "USD",
-        timezone: "UTC",
-        theme: "light",
+    const { data, error } = await supabase.auth.signUp({
+      email: normalizedEmail,
+      password,
+      options: {
+        data: {
+          full_name: trimmedName,
+          preferences: { currency: "USD", timezone: "UTC", theme: "light" },
+        },
       },
     });
 
-    const userId = newUser._id.toString();
+    if (error) {
+      console.error("Registration error:", error);
 
-    // Generate JWT and set cookie
-    const token = generateToken(userId, email);
-    await setAuthCookie(token);
+      if (
+        error.message?.includes("Database error saving new user") ||
+        error.code === "unexpected_failure"
+      ) {
+        return apiError(
+          "Account setup failed in the database. Run supabase/migrations/004_fix_auth_signup.sql in the Supabase SQL Editor, then try again.",
+          400,
+        );
+      }
+
+      return apiError(error.message || "Registration failed", 400);
+    }
+
+    if (!data.user) {
+      return apiError("Registration failed", 500);
+    }
+
+    await ensureProfileRow(data.user.id, normalizedEmail, trimmedName);
 
     return apiSuccess(
       {
-        userId,
-        email,
-        fullName,
-        message: "Registration successful",
+        userId: data.user.id,
+        email: normalizedEmail,
+        fullName: trimmedName,
+        message: data.session
+          ? "Registration successful"
+          : "Registration successful. Check your email to confirm your account if confirmation is enabled.",
       },
       201,
     );

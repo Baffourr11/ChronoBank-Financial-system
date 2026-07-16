@@ -1,7 +1,7 @@
 // Path: components/dashboard/BalanceTrend.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Card,
   CardContent,
@@ -9,20 +9,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  Area,
-  AreaChart,
-} from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { TrendingUp, TrendingDown, Brain, AlertTriangle } from "lucide-react";
+import FinancialLiveChart, {
+  type LiveChartSeries,
+} from "@/components/charts/FinancialLiveChart";
+import { getChartTheme } from "@/lib/charts/theme";
 
 interface ForecastData {
   date: string;
@@ -32,23 +24,28 @@ interface ForecastData {
 }
 
 interface BalanceTrendProps {
-  userId?: string;
+  datasetId?: string;
 }
 
-export default function BalanceTrend({ userId }: BalanceTrendProps) {
+export default function BalanceTrend({ datasetId }: BalanceTrendProps) {
   const [data, setData] = useState<ForecastData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [forecast, setForecast] = useState<any>(null);
   const [cashFlowIssues, setCashFlowIssues] = useState<any>(null);
 
   useEffect(() => {
+    if (!datasetId) {
+      setIsLoading(false);
+      return;
+    }
+
     const fetchData = async () => {
       try {
-        // Get historical transactions for balance calculation
+        const qs = `datasetId=${datasetId}`;
         const transactionsResponse = await fetch(
-          "/api/transactions?limit=1000",
+          `/api/transactions?limit=1000&${qs}`,
         );
-        const accountsResponse = await fetch("/api/accounts");
+        const accountsResponse = await fetch(`/api/accounts?${qs}`);
 
         if (transactionsResponse.ok && accountsResponse.ok) {
           const transactionsData = await transactionsResponse.json();
@@ -59,22 +56,19 @@ export default function BalanceTrend({ userId }: BalanceTrendProps) {
           const accounts =
             accountsData.data?.accounts || accountsData.data || [];
 
-          // Calculate historical balances
           const monthlyBalances = calculateMonthlyBalances(
             transactions,
             accounts,
           );
 
-          // Get forecast
           const forecastResponse = await fetch(
-            "/api/analytics/forecast?days=90",
+            `/api/analytics/forecast?days=90&${qs}`,
           );
           if (forecastResponse.ok) {
             const forecastData = await forecastResponse.json();
             setForecast(forecastData.data);
             setCashFlowIssues(forecastData.data.cashFlowIssues);
 
-            // Combine historical with forecast
             const combinedData = [
               ...monthlyBalances,
               ...forecastData.data.cashFlowForecast.map((item: any) => ({
@@ -98,62 +92,117 @@ export default function BalanceTrend({ userId }: BalanceTrendProps) {
     };
 
     fetchData();
-  }, [userId]);
+  }, [datasetId]);
+
+  const chartSeries = useMemo((): LiveChartSeries[] => {
+    if (data.length === 0) return [];
+
+    const theme = typeof window !== "undefined" ? getChartTheme() : null;
+    const historical = data.filter((d) => !d.predicted);
+    const predicted = data.filter((d) => d.predicted);
+
+    const series: LiveChartSeries[] = [];
+
+    if (historical.length > 0) {
+      series.push({
+        id: "historical",
+        name: "Historical",
+        type: "area",
+        color: theme?.chart1,
+        data: historical.map((d) => ({ time: d.date, value: d.balance })),
+      });
+    }
+
+    if (predicted.length > 0) {
+      const bridge =
+        historical.length > 0
+          ? [historical[historical.length - 1], ...predicted]
+          : predicted;
+      series.push({
+        id: "forecast",
+        name: "Forecast",
+        type: "line",
+        color: theme?.chart3,
+        data: bridge.map((d) => ({ time: d.date, value: d.balance })),
+      });
+    }
+
+    return series;
+  }, [data]);
 
   const calculateMonthlyBalances = (transactions: any[], accounts: any[]) => {
-    const currentBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
-    const monthlyData: ForecastData[] = [];
+    const currentBalance = accounts.reduce(
+      (sum, acc) => sum + Number(acc.balance ?? 0),
+      0,
+    );
+    const now = new Date();
+    const monthBuckets: { label: string; net: number }[] = [];
 
-    // Generate last 6 months of data (simplified for demo)
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
-    let runningBalance = currentBalance - 2000; // Start from 6 months ago
+    for (let i = 5; i >= 0; i--) {
+      const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const end = new Date(
+        now.getFullYear(),
+        now.getMonth() - i + 1,
+        0,
+        23,
+        59,
+        59,
+      );
+      const label = start.toISOString().slice(0, 10);
 
-    months.forEach((month, index) => {
-      runningBalance += Math.random() * 1000 - 200; // Simulate monthly changes
-      monthlyData.push({
-        date: month,
-        balance: runningBalance,
+      const net = transactions
+        .filter((tx) => {
+          const d = new Date(tx.date);
+          return d >= start && d <= end;
+        })
+        .reduce((sum, tx) => {
+          const amt = Number(tx.amount ?? 0);
+          return tx.type === "income" ? sum + amt : sum - amt;
+        }, 0);
+
+      monthBuckets.push({ label, net });
+    }
+
+    const totalNet = monthBuckets.reduce((s, m) => s + m.net, 0);
+    let running = currentBalance - totalNet;
+
+    return monthBuckets.map(({ label, net }) => {
+      running += net;
+      return {
+        date: label,
+        balance: Math.round(running * 100) / 100,
         predicted: false,
-      });
+      };
     });
-
-    return monthlyData;
   };
 
   const getTrendIcon = () => {
     if (
-      !forecast ||
-      !forecast.cashFlowForecast ||
-      forecast.cashFlowForecast.length === 0
+      !forecast?.cashFlowForecast?.length
     )
       return <Brain className="w-4 h-4 text-chart-2" />;
 
     const finalBalance =
       forecast.cashFlowForecast[forecast.cashFlowForecast.length - 1]
         ?.balance || 0;
-    const currentBalance = data[0]?.balance || 0;
+    const currentBalance = data.find((d) => !d.predicted)?.balance ?? 0;
 
     if (finalBalance > currentBalance) {
       return <TrendingUp className="w-4 h-4 text-chart-1" />;
-    } else if (finalBalance < currentBalance) {
+    }
+    if (finalBalance < currentBalance) {
       return <TrendingDown className="w-4 h-4 text-chart-4" />;
     }
-
     return <Brain className="w-4 h-4 text-chart-2" />;
   };
 
   const getTrendText = () => {
-    if (
-      !forecast ||
-      !forecast.cashFlowForecast ||
-      forecast.cashFlowForecast.length === 0
-    )
-      return "AI-powered analysis";
+    if (!forecast?.cashFlowForecast?.length) return "Live balance & forecast";
 
     const finalBalance =
       forecast.cashFlowForecast[forecast.cashFlowForecast.length - 1]
         ?.balance || 0;
-    const currentBalance = data[0]?.balance || 0;
+    const currentBalance = data.find((d) => !d.predicted)?.balance ?? 0;
     const change = finalBalance - currentBalance;
 
     return `90-day projection: ${change >= 0 ? "+" : ""}GHS ${Math.abs(change).toFixed(0)}`;
@@ -163,8 +212,8 @@ export default function BalanceTrend({ userId }: BalanceTrendProps) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Balance Trend</CardTitle>
-          <CardDescription>AI-powered balance projections</CardDescription>
+          <CardTitle>Balance trend</CardTitle>
+          <CardDescription>Loading live chart…</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-80 bg-muted rounded animate-pulse" />
@@ -179,10 +228,9 @@ export default function BalanceTrend({ userId }: BalanceTrendProps) {
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="flex items-center gap-2">
-              Balance Trend
+              Balance trend
               <Badge variant="secondary" className="text-xs">
-                <Brain className="w-3 h-3 mr-1" />
-                AI Enhanced
+                Live chart
               </Badge>
             </CardTitle>
             <CardDescription className="flex items-center gap-2">
@@ -192,99 +240,56 @@ export default function BalanceTrend({ userId }: BalanceTrendProps) {
           </div>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="min-w-0 overflow-hidden">
         {cashFlowIssues?.hasIssues && (
-          <div className="mb-4 p-3 border border-orange-200 rounded-lg bg-orange-50">
-            <div className="flex items-center gap-2 text-orange-800">
+          <div className="mb-4 p-3 border border-orange-200 dark:border-orange-900 rounded-lg bg-orange-50 dark:bg-orange-950/30">
+            <div className="flex items-center gap-2 text-orange-800 dark:text-orange-200">
               <AlertTriangle className="w-4 h-4" />
               <span className="text-sm font-medium">
-                {cashFlowIssues.issues.length} potential cash flow issues
+                {cashFlowIssues.issues.length} potential cash-flow issues
                 detected
               </span>
             </div>
           </div>
         )}
 
-        <ResponsiveContainer width="100%" height={300}>
-          <AreaChart data={data}>
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke="hsl(var(--color-border))"
-            />
-            <XAxis
-              dataKey="date"
-              stroke="hsl(var(--color-muted-foreground))"
-              tick={{ fontSize: 12 }}
-            />
-            <YAxis
-              stroke="hsl(var(--color-muted-foreground))"
-              tick={{ fontSize: 12 }}
-              tickFormatter={(value) => `GHS ${value}`}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "hsl(var(--color-card))",
-                border: "1px solid hsl(var(--color-border))",
-                borderRadius: "8px",
-              }}
-              formatter={(value: any, name: string, props: any) => {
-                const formattedValue = `GHS ${value.toFixed(2)}`;
-                if (props.payload.predicted) {
-                  return [
-                    formattedValue,
-                    `Predicted (${(props.payload.confidence * 100).toFixed(0)}% confidence)`,
-                  ];
-                }
-                return [formattedValue, "Historical"];
-              }}
-            />
-            <Legend />
-            <Area
-              type="monotone"
-              dataKey="balance"
-              stroke="hsl(var(--color-chart-1))"
-              fill="hsl(var(--color-chart-1))"
-              fillOpacity={0.3}
-              strokeWidth={2}
-              name="Balance"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+        <FinancialLiveChart series={chartSeries} height={320} />
 
         {forecast && (
           <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
-              <span className="text-muted-foreground">Current:</span>
-              <div className="font-medium">
-                GHS {data[0]?.balance.toFixed(0) || "0"}
-              </div>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Projected (90d):</span>
+              <span className="text-muted-foreground">Current</span>
               <div className="font-medium">
                 GHS{" "}
-                {forecast?.cashFlowForecast?.[
-                  forecast.cashFlowForecast.length - 1
-                ]?.balance?.toFixed(0) || "0"}
+                {data.find((d) => !d.predicted)?.balance.toFixed(0) ?? "0"}
               </div>
             </div>
             <div>
-              <span className="text-muted-foreground">Avg Confidence:</span>
+              <span className="text-muted-foreground">Projected (90d)</span>
               <div className="font-medium">
-                {forecast?.cashFlowForecast?.length
-                  ? (
+                GHS{" "}
+                {forecast.cashFlowForecast?.[
+                  forecast.cashFlowForecast.length - 1
+                ]?.balance?.toFixed(0) ?? "0"}
+              </div>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Avg confidence</span>
+              <div className="font-medium">
+                {forecast.cashFlowForecast?.length
+                  ? `${(
                       (forecast.cashFlowForecast.reduce(
                         (sum: number, item: any) => sum + item.confidence,
                         0,
                       ) /
                         forecast.cashFlowForecast.length) *
                       100
-                    ).toFixed(0) + "%"
-                  : "0%"}
+                    ).toFixed(0)}%`
+                  : "—"}
               </div>
             </div>
             <div>
-              <span className="text-muted-foreground">Risk Level:</span>
+              <span className="text-muted-foreground">Risk</span>
               <div
                 className={`font-medium ${
                   cashFlowIssues?.hasIssues

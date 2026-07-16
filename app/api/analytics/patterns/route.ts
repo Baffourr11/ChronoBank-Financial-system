@@ -1,54 +1,67 @@
-// Path: app/api/analytics/patterns/route.ts
 import { NextRequest } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
-import { connectToDatabase } from "@/lib/db";
+import { getAuthenticatedContext } from "@/lib/api/helpers";
 import { apiSuccess, apiError } from "@/lib/api";
-import { Transaction } from "@/lib/models";
+import { toITransaction } from "@/lib/mappers";
+import type { TransactionRow } from "@/lib/supabase/types";
 import { PatternDetector } from "@/lib/analytics/PatternDetector";
+import {
+  getDatasetIdFromRequest,
+  resolveDatasetId,
+} from "@/lib/dataset/resolveDataset";
+import { runIntelligencePipeline } from "@/lib/intelligence/pipeline";
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await getCurrentUser();
+    const { supabase, user } = await getAuthenticatedContext();
     if (!user) {
       return apiError("Unauthorized", 401);
     }
 
-    await connectToDatabase();
-
     const { searchParams } = new URL(request.url);
     const lookbackDays = parseInt(searchParams.get("lookbackDays") || "365");
-    const datasetId = searchParams.get("datasetId");
 
-    // Build query - filter by dataset if provided
-    const query: any = { userId: user.userId };
-    if (datasetId) {
-      query.datasetId = datasetId;
+    const datasetId = await resolveDatasetId(
+      supabase,
+      user.userId,
+      getDatasetIdFromRequest(searchParams),
+    );
+
+    if (!datasetId) {
+      return apiError("No dataset selected", 400);
     }
 
-    // Get user's transactions
-    const transactions = await Transaction.find(query)
-      .sort({ date: -1 })
+    const { data: rows, error } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("user_id", user.userId)
+      .eq("dataset_id", datasetId)
+      .order("date", { ascending: false })
       .limit(2000);
 
-    // Detect spending patterns
+    if (error) throw error;
+
+    const transactions = ((rows ?? []) as TransactionRow[]).map(toITransaction);
     const patterns = PatternDetector.detectSpendingPatterns(
       transactions,
       lookbackDays,
     );
-
-    // Detect anomalies
     const anomalies = PatternDetector.detectAnomalies(transactions, patterns);
-
-    // Detect Ghanaian-specific patterns
     const ghanaianPatterns =
       PatternDetector.detectGhanaianPatterns(transactions);
+
+    await runIntelligencePipeline(supabase, user.userId, datasetId, {
+      runRules: true,
+      trigger: "pattern_analysis",
+    });
 
     return apiSuccess({
       patterns,
       anomalies,
       ghanaianPatterns,
+      saved: true,
       analysisPeriod: {
         lookbackDays,
+        datasetId,
         totalTransactions: transactions.length,
         expenseTransactions: transactions.filter((t) => t.type === "expense")
           .length,

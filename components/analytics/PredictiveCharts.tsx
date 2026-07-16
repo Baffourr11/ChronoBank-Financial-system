@@ -1,8 +1,18 @@
-'use client';
+"use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { TrendingUp, TrendingDown, AlertTriangle, Info } from 'lucide-react';
+import { useMemo } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { TrendingUp, TrendingDown, AlertTriangle, Info } from "lucide-react";
+import FinancialLiveChart, {
+  type LiveChartSeries,
+} from "@/components/charts/FinancialLiveChart";
+import { getChartTheme } from "@/lib/charts/theme";
 
 interface ForecastData {
   date: string;
@@ -27,14 +37,103 @@ interface PredictiveChartsProps {
   isLoading?: boolean;
 }
 
-export default function PredictiveCharts({ forecasts, cashFlowData, isLoading }: PredictiveChartsProps) {
+export default function PredictiveCharts({
+  forecasts,
+  cashFlowData,
+  isLoading,
+}: PredictiveChartsProps) {
+  const theme = typeof window !== "undefined" ? getChartTheme() : null;
+
+  const chartForecasts = useMemo(() => normalizeSpendingForecasts(forecasts), [forecasts]);
+
+  const spendingSeries = useMemo((): LiveChartSeries[] => {
+    if (!chartForecasts.length) return [];
+    const series: LiveChartSeries[] = [
+      {
+        id: "predicted",
+        name: "Predicted",
+        type: "area",
+        color: theme?.chart1,
+        data: chartForecasts.map((f) => ({
+          time: f.date,
+          value: f.predicted,
+        })),
+      },
+      {
+        id: "minRange",
+        name: "Min range",
+        type: "line",
+        color: theme?.chart3,
+        data: chartForecasts.map((f) => ({ time: f.date, value: f.minRange })),
+      },
+      {
+        id: "maxRange",
+        name: "Max range",
+        type: "line",
+        color: theme?.chart2,
+        data: chartForecasts.map((f) => ({ time: f.date, value: f.maxRange })),
+      },
+    ];
+    if (chartForecasts.some((f) => f.actual != null)) {
+      series.push({
+        id: "actual",
+        name: "Actual",
+        type: "line",
+        color: theme?.chart5,
+        data: chartForecasts
+          .filter((f) => f.actual != null)
+          .map((f) => ({ time: f.date, value: f.actual! })),
+      });
+    }
+    return series;
+  }, [chartForecasts, theme]);
+
+  const cashFlowSeries = useMemo((): LiveChartSeries[] => {
+    if (!cashFlowData.length) return [];
+    return [
+      {
+        id: "balance",
+        name: "Balance",
+        type: "area",
+        color: theme?.chart2,
+        data: cashFlowData.map((d) => ({ time: d.date, value: d.balance })),
+      },
+      {
+        id: "income",
+        name: "Income",
+        type: "line",
+        color: theme?.chart1,
+        data: cashFlowData.map((d) => ({ time: d.date, value: d.income })),
+      },
+      {
+        id: "expenses",
+        name: "Expenses",
+        type: "line",
+        color: theme?.chart4,
+        data: cashFlowData.map((d) => ({ time: d.date, value: d.expenses })),
+      },
+      {
+        id: "netCashFlow",
+        name: "Net cash flow",
+        type: "line",
+        color: theme?.chart3,
+        data: cashFlowData.map((d) => ({
+          time: d.date,
+          value: d.netCashFlow,
+        })),
+      },
+    ];
+  }, [cashFlowData, theme]);
+
   if (isLoading) {
     return (
       <div className="space-y-6">
         <Card>
           <CardHeader>
             <CardTitle>Spending Forecast</CardTitle>
-            <CardDescription>AI-powered predictions for your spending patterns</CardDescription>
+            <CardDescription>
+              AI-powered predictions for your spending patterns
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-80 bg-muted rounded animate-pulse" />
@@ -43,7 +142,9 @@ export default function PredictiveCharts({ forecasts, cashFlowData, isLoading }:
         <Card>
           <CardHeader>
             <CardTitle>Cash Flow Projection</CardTitle>
-            <CardDescription>90-day cash flow analysis with confidence intervals</CardDescription>
+            <CardDescription>
+              90-day cash flow analysis with confidence intervals
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-80 bg-muted rounded animate-pulse" />
@@ -53,37 +154,58 @@ export default function PredictiveCharts({ forecasts, cashFlowData, isLoading }:
     );
   }
 
-  // Calculate key metrics
-  const totalPredicted = forecasts.reduce((sum, f) => sum + f.predicted, 0);
-  const avgConfidence = cashFlowData.reduce((sum, f) => sum + f.confidence, 0) / cashFlowData.length;
-  const negativeCashFlowDays = cashFlowData.filter(d => d.netCashFlow < 0).length;
-  const lowestBalance = Math.min(...cashFlowData.map(d => d.balance));
+  if (!cashFlowData.length && !chartForecasts.length) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center text-sm text-muted-foreground">
+          No forecast data yet. Run analysis from the dashboard after importing
+          transactions.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const totalPredicted = chartForecasts.reduce(
+    (sum, f) => sum + (f.predicted ?? 0),
+    0,
+  );
+  const avgConfidence =
+    cashFlowData.length > 0
+      ? cashFlowData.reduce((sum, f) => sum + (f.confidence ?? 0), 0) /
+        cashFlowData.length
+      : 0;
+  const negativeCashFlowDays = cashFlowData.filter(
+    (d) => d.netCashFlow < 0,
+  ).length;
+  const lowestBalance =
+    cashFlowData.length > 0
+      ? Math.min(...cashFlowData.map((d) => d.balance))
+      : 0;
 
   return (
     <div className="space-y-6">
-      {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="min-w-0">
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-chart-1" />
-              <div>
-                <p className="text-sm text-muted-foreground">90-Day Forecast</p>
-                <p className="text-lg font-semibold">
+            <div className="flex items-center gap-2 min-w-0">
+              <TrendingUp className="w-4 h-4 text-chart-1 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm text-muted-foreground truncate">90-Day Forecast</p>
+                <p className="text-lg font-semibold tabular-nums truncate">
                   GHS {totalPredicted.toFixed(0)}
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
-        
-        <Card>
+
+        <Card className="min-w-0">
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Info className="w-4 h-4 text-chart-2" />
-              <div>
-                <p className="text-sm text-muted-foreground">Avg Confidence</p>
-                <p className="text-lg font-semibold">
+            <div className="flex items-center gap-2 min-w-0">
+              <Info className="w-4 h-4 text-chart-2 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm text-muted-foreground truncate">Avg Confidence</p>
+                <p className="text-lg font-semibold tabular-nums truncate">
                   {(avgConfidence * 100).toFixed(0)}%
                 </p>
               </div>
@@ -91,35 +213,33 @@ export default function PredictiveCharts({ forecasts, cashFlowData, isLoading }:
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0">
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               {negativeCashFlowDays > 0 ? (
-                <AlertTriangle className="w-4 h-4 text-chart-4" />
+                <AlertTriangle className="w-4 h-4 text-chart-4 shrink-0" />
               ) : (
-                <TrendingUp className="w-4 h-4 text-chart-1" />
+                <TrendingUp className="w-4 h-4 text-chart-1 shrink-0" />
               )}
-              <div>
-                <p className="text-sm text-muted-foreground">Negative Days</p>
-                <p className="text-lg font-semibold">
-                  {negativeCashFlowDays}
-                </p>
+              <div className="min-w-0">
+                <p className="text-sm text-muted-foreground truncate">Negative Days</p>
+                <p className="text-lg font-semibold tabular-nums">{negativeCashFlowDays}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0">
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               {lowestBalance < 0 ? (
-                <TrendingDown className="w-4 h-4 text-chart-4" />
+                <TrendingDown className="w-4 h-4 text-chart-4 shrink-0" />
               ) : (
-                <TrendingUp className="w-4 h-4 text-chart-1" />
+                <TrendingUp className="w-4 h-4 text-chart-1 shrink-0" />
               )}
-              <div>
-                <p className="text-sm text-muted-foreground">Lowest Balance</p>
-                <p className="text-lg font-semibold">
+              <div className="min-w-0">
+                <p className="text-sm text-muted-foreground truncate">Lowest Balance</p>
+                <p className="text-lg font-semibold tabular-nums truncate">
                   GHS {lowestBalance.toFixed(0)}
                 </p>
               </div>
@@ -128,163 +248,40 @@ export default function PredictiveCharts({ forecasts, cashFlowData, isLoading }:
         </Card>
       </div>
 
-      {/* Spending Forecast Chart */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Spending Forecast</CardTitle>
-          <CardDescription>
-            AI-powered predictions with confidence intervals (min-max range)
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={forecasts}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--color-border))" />
-              <XAxis 
-                dataKey="date" 
-                stroke="hsl(var(--color-muted-foreground))"
-                tick={{ fontSize: 12 }}
-              />
-              <YAxis 
-                stroke="hsl(var(--color-muted-foreground))"
-                tick={{ fontSize: 12 }}
-                tickFormatter={(value) => `GHS ${value}`}
-              />
-              <Tooltip 
-                contentStyle={{
-                  backgroundColor: 'hsl(var(--color-card))',
-                  border: '1px solid hsl(var(--color-border))',
-                  borderRadius: '8px',
-                }}
-                formatter={(value: any, name: string) => {
-                  if (name === 'predicted') return [`GHS ${value.toFixed(2)}`, 'Predicted'];
-                  if (name === 'minRange') return [`GHS ${value.toFixed(2)}`, 'Min Range'];
-                  if (name === 'maxRange') return [`GHS ${value.toFixed(2)}`, 'Max Range'];
-                  return [value, name];
-                }}
-              />
-              <Legend />
-              <Area
-                type="monotone"
-                dataKey="maxRange"
-                stackId="1"
-                stroke="none"
-                fill="hsl(var(--color-chart-1))"
-                fillOpacity={0.1}
-                name="Max Range"
-              />
-              <Area
-                type="monotone"
-                dataKey="minRange"
-                stackId="2"
-                stroke="none"
-                fill="hsl(var(--color-chart-1))"
-                fillOpacity={0.2}
-                name="Min Range"
-              />
-              <Area
-                type="monotone"
-                dataKey="predicted"
-                stroke="hsl(var(--color-chart-1))"
-                strokeWidth={2}
-                fill="none"
-                name="Predicted"
-              />
-              {forecasts.some(f => f.actual) && (
-                <Line
-                  type="monotone"
-                  dataKey="actual"
-                  stroke="hsl(var(--color-chart-2))"
-                  strokeWidth={2}
-                  dot={{ fill: 'hsl(var(--color-chart-2))' }}
-                  name="Actual"
-                />
-              )}
-            </AreaChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
+      {chartForecasts.length > 0 && (
+        <Card className="min-w-0 overflow-hidden">
+          <CardHeader>
+            <CardTitle>Spending Forecast</CardTitle>
+            <CardDescription>
+              Live chart — predicted spending with confidence range
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="min-w-0 overflow-hidden">
+            {spendingSeries.length > 0 ? (
+              <FinancialLiveChart series={spendingSeries} height={300} />
+            ) : (
+              <div className="flex h-[300px] items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                Add expense transactions to generate a spending forecast.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Cash Flow Projection */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Cash Flow Projection</CardTitle>
-          <CardDescription>
-            Daily income vs expenses with projected balance over 90 days
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={400}>
-            <LineChart data={cashFlowData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--color-border))" />
-              <XAxis 
-                dataKey="date" 
-                stroke="hsl(var(--color-muted-foreground))"
-                tick={{ fontSize: 12 }}
-              />
-              <YAxis 
-                stroke="hsl(var(--color-muted-foreground))"
-                tick={{ fontSize: 12 }}
-                tickFormatter={(value) => `GHS ${value}`}
-              />
-              <Tooltip 
-                contentStyle={{
-                  backgroundColor: 'hsl(var(--color-card))',
-                  border: '1px solid hsl(var(--color-border))',
-                  borderRadius: '8px',
-                }}
-                formatter={(value: any, name: string) => {
-                  const formatter = (val: number) => `GHS ${val.toFixed(2)}`;
-                  switch (name) {
-                    case 'income': return [formatter(value), 'Income'];
-                    case 'expenses': return [formatter(value), 'Expenses'];
-                    case 'netCashFlow': return [formatter(value), 'Net Cash Flow'];
-                    case 'balance': return [formatter(value), 'Balance'];
-                    case 'confidence': return [`${(value * 100).toFixed(0)}%`, 'Confidence'];
-                    default: return [value, name];
-                  }
-                }}
-              />
-              <Legend />
-              <Line
-                type="monotone"
-                dataKey="income"
-                stroke="hsl(var(--color-chart-1))"
-                strokeWidth={2}
-                dot={false}
-                name="Income"
-              />
-              <Line
-                type="monotone"
-                dataKey="expenses"
-                stroke="hsl(var(--color-chart-4))"
-                strokeWidth={2}
-                dot={false}
-                name="Expenses"
-              />
-              <Line
-                type="monotone"
-                dataKey="balance"
-                stroke="hsl(var(--color-chart-2))"
-                strokeWidth={3}
-                dot={false}
-                name="Balance"
-              />
-              <Line
-                type="monotone"
-                dataKey="netCashFlow"
-                stroke="hsl(var(--color-chart-3))"
-                strokeWidth={1}
-                dot={false}
-                strokeDasharray="5 5"
-                name="Net Cash Flow"
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
+      {cashFlowData.length > 0 && (
+        <Card className="min-w-0 overflow-hidden">
+          <CardHeader>
+            <CardTitle>Cash Flow Projection</CardTitle>
+            <CardDescription>
+              Live chart — income, expenses, and balance over 90 days
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="min-w-0 overflow-hidden">
+            <FinancialLiveChart series={cashFlowSeries} height={400} />
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Confidence Analysis */}
       <Card>
         <CardHeader>
           <CardTitle>Prediction Confidence Analysis</CardTitle>
@@ -298,26 +295,37 @@ export default function PredictiveCharts({ forecasts, cashFlowData, isLoading }:
               <div>
                 <h4 className="font-medium">High Confidence Period</h4>
                 <p className="text-sm text-muted-foreground">
-                  First 30 days have {(avgConfidence * 100).toFixed(0)}% average confidence
+                  First 30 days have {(avgConfidence * 100).toFixed(0)}% average
+                  confidence
                 </p>
               </div>
               <div className="text-right">
-                <div className="text-sm font-medium text-chart-1">Reliable</div>
-                <div className="text-xs text-muted-foreground">Based on recent patterns</div>
+                <div className="text-sm font-medium text-chart-1">
+                  Reliable
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Based on recent patterns
+                </div>
               </div>
             </div>
 
             {negativeCashFlowDays > 0 && (
-              <div className="flex items-center justify-between p-4 border border-orange-200 rounded-lg bg-orange-50">
+              <div className="flex items-center justify-between p-4 border border-orange-200 rounded-lg bg-orange-50 dark:bg-orange-950/30 dark:border-orange-900">
                 <div>
-                  <h4 className="font-medium text-orange-800">Cash Flow Concern</h4>
-                  <p className="text-sm text-orange-600">
+                  <h4 className="font-medium text-orange-800 dark:text-orange-200">
+                    Cash Flow Concern
+                  </h4>
+                  <p className="text-sm text-orange-600 dark:text-orange-300">
                     {negativeCashFlowDays} days with negative cash flow projected
                   </p>
                 </div>
                 <div className="text-right">
-                  <div className="text-sm font-medium text-orange-800">Action Required</div>
-                  <div className="text-xs text-orange-600">Review spending patterns</div>
+                  <div className="text-sm font-medium text-orange-800 dark:text-orange-200">
+                    Action Required
+                  </div>
+                  <div className="text-xs text-orange-600 dark:text-orange-300">
+                    Review spending patterns
+                  </div>
                 </div>
               </div>
             )}
@@ -330,8 +338,12 @@ export default function PredictiveCharts({ forecasts, cashFlowData, isLoading }:
                 </p>
               </div>
               <div className="text-right">
-                <div className="text-sm font-medium text-chart-2">Accounted For</div>
-                <div className="text-xs text-muted-foreground">Improves accuracy</div>
+                <div className="text-sm font-medium text-chart-2">
+                  Accounted For
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Improves accuracy
+                </div>
               </div>
             </div>
           </div>
@@ -339,4 +351,38 @@ export default function PredictiveCharts({ forecasts, cashFlowData, isLoading }:
       </Card>
     </div>
   );
+}
+
+/** Map API daily series or legacy period summaries into chart-ready points */
+function normalizeSpendingForecasts(raw: ForecastData[]): ForecastData[] {
+  if (!raw?.length) return [];
+
+  const first = raw[0] as ForecastData & {
+    period?: string;
+    predictedAmount?: number;
+    range?: { min: number; max: number };
+  };
+
+  if (first.date && typeof first.predicted === "number") {
+    return raw;
+  }
+
+  if (first.period && typeof first.predictedAmount === "number") {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const offsets = [7, 30, 90];
+    return raw.map((item, index) => {
+      const row = item as typeof first;
+      const d = new Date(today);
+      d.setDate(today.getDate() + (offsets[index] ?? (index + 1) * 30));
+      return {
+        date: d.toISOString().split("T")[0],
+        predicted: row.predictedAmount ?? 0,
+        minRange: row.range?.min ?? 0,
+        maxRange: row.range?.max ?? 0,
+      };
+    });
+  }
+
+  return [];
 }

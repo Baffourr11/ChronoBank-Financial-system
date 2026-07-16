@@ -1,363 +1,219 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { 
-  Brain, 
-  TrendingUp, 
-  AlertTriangle, 
-  Lightbulb, 
-  Target, 
+import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Brain,
+  TrendingUp,
+  AlertTriangle,
+  ChevronRight,
   Shield,
-  Zap,
-  ChevronRight
-} from 'lucide-react';
+} from "lucide-react";
 
 interface Insight {
   id: string;
-  type: 'pattern' | 'anomaly' | 'forecast' | 'recommendation';
+  type: "pattern" | "anomaly" | "forecast";
   title: string;
   description: string;
-  severity: 'low' | 'medium' | 'high';
-  confidence: number;
-  actionable: boolean;
-  action?: {
-    type: string;
-    label: string;
-    url?: string;
-  };
+  severity: "low" | "medium" | "high";
+  href: string;
 }
 
 interface SmartInsightsProps {
-  userId?: string;
+  datasetId?: string;
 }
 
-export default function SmartInsights({ userId }: SmartInsightsProps) {
+function buildInsights(patternsData: any, forecastData: any): Insight[] {
+  const items: Insight[] = [];
+
+  patternsData?.patterns?.forEach((pattern: any, index: number) => {
+    if (pattern.confidence > 0.75) {
+      items.push({
+        id: `pattern-${index}`,
+        type: "pattern",
+        title: `${pattern.category} spending pattern`,
+        description: `Confidence ${(pattern.confidence * 100).toFixed(0)}%${
+          pattern.seasonality?.hasSeasonalPattern
+            ? ` · peak in ${pattern.seasonality.peakSeason}`
+            : ""
+        }`,
+        severity:
+          pattern.trend?.direction === "increasing" ? "medium" : "low",
+        href: "/analytics/overview",
+      });
+    }
+  });
+
+  patternsData?.anomalies?.forEach((anomaly: any, index: number) => {
+    if (anomaly.severity === "high" || anomaly.severity === "medium") {
+      items.push({
+        id: `anomaly-${index}`,
+        type: "anomaly",
+        title: "Unusual activity",
+        description: anomaly.description,
+        severity: anomaly.severity === "high" ? "high" : "medium",
+        href: "/timeline",
+      });
+    }
+  });
+
+  if (forecastData?.cashFlowIssues?.hasIssues) {
+    const count = forecastData.cashFlowIssues.issues.length;
+    items.push({
+      id: "cash-flow",
+      type: "forecast",
+      title: "Cash-flow risk ahead",
+      description: `${count} projected shortage${count === 1 ? "" : "s"} in the next 90 days.`,
+      severity: "high",
+      href: "/analytics/overview",
+    });
+  }
+
+  if (patternsData?.ghanaianPatterns?.paydaySpending) {
+    items.push({
+      id: "payday",
+      type: "pattern",
+      title: "Payday spending cycle",
+      description:
+        "Spending spikes around pay periods — consider a payday budget.",
+      severity: "medium",
+      href: "/budgets",
+    });
+  }
+
+  const order = { high: 3, medium: 2, low: 1 };
+  return items.sort((a, b) => order[b.severity] - order[a.severity]);
+}
+
+export default function SmartInsights({ datasetId }: SmartInsightsProps) {
   const [insights, setInsights] = useState<Insight[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [patterns, setPatterns] = useState<any>(null);
-  const [forecast, setForecast] = useState<any>(null);
+
+  const load = useCallback(async () => {
+    if (!datasetId) {
+      setInsights([]);
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const qs = `datasetId=${datasetId}`;
+      const [patternsRes, forecastRes] = await Promise.all([
+        fetch(`/api/analytics/patterns?${qs}`),
+        fetch(`/api/analytics/forecast?days=90&${qs}`),
+      ]);
+
+      let patternsData = null;
+      let forecastData = null;
+
+      if (patternsRes.ok) {
+        patternsData = (await patternsRes.json()).data;
+      }
+      if (forecastRes.ok) {
+        forecastData = (await forecastRes.json()).data;
+      }
+
+      setInsights(buildInsights(patternsData, forecastData));
+    } catch {
+      setInsights([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [datasetId]);
 
   useEffect(() => {
-    const fetchInsights = async () => {
-      try {
-        // Fetch patterns and forecast data
-        const [patternsResponse, forecastResponse] = await Promise.all([
-          fetch('/api/analytics/patterns'),
-          fetch('/api/analytics/forecast?days=90')
-        ]);
+    load();
+  }, [load]);
 
-        if (patternsResponse.ok) {
-          const patternsData = await patternsResponse.json();
-          setPatterns(patternsData.data);
-          generateInsights(patternsData.data, null);
-        }
-
-        if (forecastResponse.ok) {
-          const forecastData = await forecastResponse.json();
-          setForecast(forecastData.data);
-          generateInsights(patterns, forecastData.data);
-        }
-      } catch (error) {
-        console.error('Failed to fetch insights:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchInsights();
-  }, [userId]);
-
-  const generateInsights = (patternsData: any, forecastData: any) => {
-    const newInsights: Insight[] = [];
-
-    // Pattern-based insights
-    if (patternsData) {
-      // High confidence patterns
-      patternsData.patterns?.forEach((pattern: any, index: number) => {
-        if (pattern.confidence > 0.8) {
-          newInsights.push({
-            id: `pattern-${index}`,
-            type: 'pattern',
-            title: `Strong ${pattern.category} Pattern Detected`,
-            description: `Your ${pattern.category} spending follows a predictable pattern with ${(pattern.confidence * 100).toFixed(0)}% confidence. ${pattern.seasonality.hasSeasonalPattern ? `Peak spending in ${pattern.seasonality.peakSeason}.` : ''}`,
-            severity: pattern.trend.direction === 'increasing' ? 'medium' : 'low',
-            confidence: pattern.confidence,
-            actionable: true,
-            action: {
-              type: 'view_patterns',
-              label: 'View Details',
-              url: '/analytics/patterns'
-            }
-          });
-        }
-      });
-
-      // Anomaly insights
-      patternsData.anomalies?.forEach((anomaly: any, index: number) => {
-        if (anomaly.severity === 'high') {
-          newInsights.push({
-            id: `anomaly-${index}`,
-            type: 'anomaly',
-            title: `Unusual ${anomaly.type} Detected`,
-            description: anomaly.description,
-            severity: 'high',
-            confidence: anomaly.confidence,
-            actionable: true,
-            action: {
-              type: 'review_transaction',
-              label: 'Review Transaction',
-              url: '/transactions'
-            }
-          });
-        }
-      });
-
-      // Ghanaian-specific insights
-      if (patternsData.ghanaianPatterns?.paydaySpending) {
-        newInsights.push({
-          id: 'payday-pattern',
-          type: 'pattern',
-          title: 'Payday Spending Pattern',
-          description: 'We detect increased spending around payday periods. Consider budgeting for this cycle.',
-          severity: 'medium',
-          confidence: 0.75,
-          actionable: true,
-          action: {
-            type: 'create_budget',
-            label: 'Create Budget',
-            url: '/budgets'
-          }
-        });
-      }
-    }
-
-    // Forecast-based insights
-    if (forecastData) {
-      // Cash flow issues
-      if (forecastData.cashFlowIssues?.hasIssues) {
-        newInsights.push({
-          id: 'cash-flow-warning',
-          type: 'forecast',
-          title: 'Cash Flow Concerns Detected',
-          description: `${forecastData.cashFlowIssues.issues.length} potential cash flow issues identified in the next 90 days.`,
-          severity: 'high',
-          confidence: 0.8,
-          actionable: true,
-          action: {
-            type: 'run_scenario',
-            label: 'Run Scenarios',
-            url: '/analytics/scenarios'
-          }
-        });
-      }
-
-      // Positive forecast
-      const finalBalance = forecastData.cashFlowForecast[forecastData.cashFlowForecast.length - 1]?.balance || 0;
-      const currentBalance = forecastData.cashFlowForecast[0]?.balance || 0;
-      
-      if (finalBalance > currentBalance * 1.1) {
-        newInsights.push({
-          id: 'positive-growth',
-          type: 'forecast',
-          title: 'Positive Growth Forecast',
-          description: `Your balance is projected to grow by ${((finalBalance - currentBalance) / currentBalance * 100).toFixed(0)}% over the next 90 days.`,
-          severity: 'low',
-          confidence: forecastData.cashFlowForecast.reduce((sum: number, item: any) => sum + item.confidence, 0) / forecastData.cashFlowForecast.length,
-          actionable: true,
-          action: {
-            type: 'investment_opportunities',
-            label: 'Explore Options',
-            url: '/analytics/investments'
-          }
-        });
-      }
-    }
-
-    // Recommendation insights
-    newInsights.push({
-      id: 'automation-tip',
-      type: 'recommendation',
-      title: 'Automate Your Finances',
-      description: 'Set up rules to automatically handle recurring transactions and savings goals.',
-      severity: 'low',
-      confidence: 0.9,
-      actionable: true,
-      action: {
-        type: 'create_rule',
-        label: 'Create Rule',
-        url: '/rules'
-      }
-    });
-
-    // Sort by severity and confidence
-    newInsights.sort((a, b) => {
-      const severityOrder = { high: 3, medium: 2, low: 1 };
-      const severityDiff = severityOrder[b.severity] - severityOrder[a.severity];
-      if (severityDiff !== 0) return severityDiff;
-      return b.confidence - a.confidence;
-    });
-
-    setInsights(newInsights);
+  const icon = (type: Insight["type"]) => {
+    if (type === "anomaly") return <AlertTriangle className="w-4 h-4" />;
+    if (type === "forecast") return <TrendingUp className="w-4 h-4" />;
+    return <Brain className="w-4 h-4" />;
   };
-
-  const getInsightIcon = (type: string) => {
-    switch (type) {
-      case 'pattern': return <Brain className="w-4 h-4" />;
-      case 'anomaly': return <AlertTriangle className="w-4 h-4" />;
-      case 'forecast': return <TrendingUp className="w-4 h-4" />;
-      case 'recommendation': return <Lightbulb className="w-4 h-4" />;
-      default: return <Brain className="w-4 h-4" />;
-    }
-  };
-
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'high': return 'border-red-200 bg-red-50 text-red-800';
-      case 'medium': return 'border-orange-200 bg-orange-50 text-orange-800';
-      case 'low': return 'border-blue-200 bg-blue-50 text-blue-800';
-      default: return 'border-gray-200 bg-gray-50 text-gray-800';
-    }
-  };
-
-  const getSeverityBadgeColor = (severity: string) => {
-    switch (severity) {
-      case 'high': return 'destructive';
-      case 'medium': return 'default';
-      case 'low': return 'secondary';
-      default: return 'secondary';
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Brain className="w-5 h-5" />
-            AI Insights
-          </CardTitle>
-          <CardDescription>Personalized financial intelligence</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="p-4 border rounded-lg">
-                <div className="h-4 bg-muted rounded w-3/4 mb-2 animate-pulse" />
-                <div className="h-3 bg-muted rounded w-full mb-2 animate-pulse" />
-                <div className="h-3 bg-muted rounded w-2/3 animate-pulse" />
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Brain className="w-5 h-5" />
-          AI Insights
-          <Badge variant="secondary" className="text-xs">
-            <Zap className="w-3 h-3 mr-1" />
-            {insights.length} Active
-          </Badge>
-        </CardTitle>
-        <CardDescription>
-          Personalized financial intelligence based on your patterns
-        </CardDescription>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Brain className="w-4 h-4" />
+              Live insights
+            </CardTitle>
+            <CardDescription>
+              From your dataset patterns and forecast
+            </CardDescription>
+          </div>
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/analytics/overview">
+              Full analytics
+              <ChevronRight className="w-3 h-3 ml-1" />
+            </Link>
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
-        {insights.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <Shield className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            <p>No insights available yet</p>
-            <p className="text-sm">Continue using the app to enable AI analysis</p>
+        {isLoading ? (
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-14 bg-muted rounded-md animate-pulse" />
+            ))}
+          </div>
+        ) : insights.length === 0 ? (
+          <div className="text-center py-6 text-sm text-muted-foreground">
+            <Shield className="w-8 h-8 mx-auto mb-2 opacity-40" />
+            <p>No insights yet.</p>
+            <p className="mt-1">
+              Run analysis on the dashboard, then check back here.
+            </p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {insights.slice(0, 5).map((insight) => (
-              <div 
-                key={insight.id} 
-                className={`p-4 border rounded-lg ${getSeverityColor(insight.severity)}`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="mt-1">
-                    {getInsightIcon(insight.type)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h4 className="font-medium text-sm">{insight.title}</h4>
-                      <Badge variant={getSeverityBadgeColor(insight.severity)} className="text-xs">
+          <ul className="space-y-2">
+            {insights.slice(0, 4).map((insight) => (
+              <li key={insight.id}>
+                <Link
+                  href={insight.href}
+                  className="flex items-start gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+                >
+                  <span className="mt-0.5 text-muted-foreground">
+                    {icon(insight.type)}
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-sm">
+                        {insight.title}
+                      </span>
+                      <Badge
+                        variant={
+                          insight.severity === "high"
+                            ? "destructive"
+                            : "secondary"
+                        }
+                        className="text-xs"
+                      >
                         {insight.severity}
                       </Badge>
-                    </div>
-                    <p className="text-sm opacity-90 mb-2">{insight.description}</p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs opacity-75">
-                        {(insight.confidence * 100).toFixed(0)}% confidence
-                      </span>
-                      {insight.actionable && insight.action && (
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="text-xs h-6"
-                          onClick={() => {
-                            // Navigate to action URL
-                            window.location.href = insight.action?.url || '#';
-                          }}
-                        >
-                          {insight.action.label}
-                          <ChevronRight className="w-3 h-3 ml-1" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
+                    </span>
+                    <span className="text-xs text-muted-foreground line-clamp-2 block mt-0.5">
+                      {insight.description}
+                    </span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 shrink-0 text-muted-foreground" />
+                </Link>
+              </li>
             ))}
-            
-            {insights.length > 5 && (
-              <div className="text-center pt-2">
-                <Button variant="outline" size="sm">
-                  View All Insights ({insights.length - 5} more)
-                  <ChevronRight className="w-3 h-3 ml-1" />
-                </Button>
-              </div>
-            )}
-          </div>
+          </ul>
         )}
-        
-        {/* Quick Actions */}
-        <div className="mt-6 pt-4 border-t">
-          <div className="flex items-center gap-2 mb-3">
-            <Target className="w-4 h-4" />
-            <span className="text-sm font-medium">Quick Actions</span>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <Button variant="outline" size="sm" className="text-xs">
-              <Brain className="w-3 h-3 mr-1" />
-              Run Analysis
-            </Button>
-            <Button variant="outline" size="sm" className="text-xs">
-              <TrendingUp className="w-3 h-3 mr-1" />
-              View Forecast
-            </Button>
-            <Button variant="outline" size="sm" className="text-xs">
-              <Shield className="w-3 h-3 mr-1" />
-              Test Scenarios
-            </Button>
-            <Button variant="outline" size="sm" className="text-xs">
-              <Lightbulb className="w-3 h-3 mr-1" />
-              Get Tips
-            </Button>
-          </div>
-        </div>
       </CardContent>
     </Card>
   );
